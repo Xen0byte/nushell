@@ -197,13 +197,11 @@ pub(crate) fn compile_match(
     for (pattern, _) in match_block {
         let match_label = builder.label(None);
         match_labels.push(match_label);
-        builder.push(
-            Instruction::Match {
-                pattern: Box::new(pattern.pattern.clone()),
-                src: match_reg,
-                index: match_label.0,
-            }
-            .into_spanned(pattern.span),
+        builder.r#match(
+            pattern.pattern.clone(),
+            match_reg,
+            match_label,
+            pattern.span,
         )?;
         // Also add a label for the next match instruction or failure case
         next_labels.push(builder.label(Some(builder.here())));
@@ -473,7 +471,7 @@ pub(crate) fn compile_try(
     if let Some(mode) = redirect_modes.err {
         builder.push(mode.map(|mode| Instruction::RedirectErr { mode }))?;
     }
-    builder.push(Instruction::WriteToOutDests { src: io_reg }.into_spanned(call.head))?;
+    builder.push(Instruction::DrainIfEnd { src: io_reg }.into_spanned(call.head))?;
     builder.push(Instruction::PopErrorHandler.into_spanned(call.head))?;
 
     // Jump over the failure case

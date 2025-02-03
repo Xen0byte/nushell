@@ -39,8 +39,8 @@ impl Command for SubCommand {
             )
             .named(
                 "max-time",
-                SyntaxShape::Int,
-                "timeout period in seconds",
+                SyntaxShape::Duration,
+                "max duration before timeout occurs",
                 Some('m'),
             )
             .named(
@@ -128,8 +128,13 @@ impl Command for SubCommand {
                 result: None,
             },
             Example {
-                description: "Upload a file to example.com",
-                example: "http post --content-type multipart/form-data https://www.example.com { audio: (open -r file.mp3) }",
+                description: "Upload a binary file to example.com",
+                example: "http post --content-type multipart/form-data https://www.example.com { file: (open -r file.mp3) }",
+                result: None,
+            },
+            Example {
+                description: "Convert a text file into binary and upload it to example.com",
+                example: "http post --content-type multipart/form-data https://www.example.com { file: (open -r file.txt | into binary) }",
                 result: None,
             },
         ]
@@ -219,6 +224,7 @@ fn helper(
     request = request_add_custom_headers(args.headers, request)?;
 
     let response = send_request(
+        engine_state,
         request.clone(),
         args.data,
         args.content_type,

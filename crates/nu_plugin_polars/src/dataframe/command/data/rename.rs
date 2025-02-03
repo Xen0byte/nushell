@@ -150,7 +150,7 @@ fn command_eager(
 
     for (from, to) in columns.iter().zip(new_names.iter()) {
         polars_df
-            .rename(from, to)
+            .rename(from, to.into())
             .map_err(|e| ShellError::GenericError {
                 error: "Error renaming".into(),
                 msg: e.to_string(),
@@ -185,7 +185,7 @@ fn command_lazy(
     }
 
     let lazy = lazy.to_polars();
-    let lazy: NuLazyFrame = lazy.rename(&columns, &new_names).into();
+    let lazy: NuLazyFrame = lazy.rename(&columns, &new_names, true).into();
 
     lazy.to_pipeline_data(plugin, engine, call.head)
 }

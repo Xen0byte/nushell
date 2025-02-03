@@ -1,6 +1,6 @@
 use crate::{
     command,
-    config_files::{self, setup_config, NUSHELL_FOLDER},
+    config_files::{self, setup_config},
 };
 use log::trace;
 #[cfg(feature = "plugin")]
@@ -14,6 +14,7 @@ use nu_utils::perf;
 
 pub(crate) fn run_commands(
     engine_state: &mut EngineState,
+    mut stack: Stack,
     parsed_nu_cli_args: command::NushellCliArgs,
     use_color: bool,
     commands: &Spanned<String>,
@@ -21,19 +22,9 @@ pub(crate) fn run_commands(
     entire_start_time: std::time::Instant,
 ) {
     trace!("run_commands");
-    let mut stack = Stack::new();
+
     let start_time = std::time::Instant::now();
-
-    let ask_to_create_config = if let Some(mut config_path) = nu_path::config_dir() {
-        config_path.push(NUSHELL_FOLDER);
-        !config_path.exists()
-    } else {
-        false
-    };
-
-    if stack.has_env_var(engine_state, "NU_DISABLE_IR") {
-        stack.use_ir = false;
-    }
+    let create_scaffold = nu_path::nu_config_dir().map_or(false, |p| !p.exists());
 
     // if the --no-config-file(-n) option is NOT passed, load the plugin file,
     // load the default env file or custom (depending on parsed_nu_cli_args.env_file),
@@ -42,7 +33,7 @@ pub(crate) fn run_commands(
     // if the --no-config-file(-n) flag is passed, do not load plugin, env, or config files
     if parsed_nu_cli_args.no_config_file.is_none() {
         #[cfg(feature = "plugin")]
-        read_plugin_file(engine_state, parsed_nu_cli_args.plugin_file, NUSHELL_FOLDER);
+        read_plugin_file(engine_state, parsed_nu_cli_args.plugin_file);
 
         perf!("read plugins", start_time, use_color);
 
@@ -54,7 +45,7 @@ pub(crate) fn run_commands(
                 &mut stack,
                 parsed_nu_cli_args.env_file,
                 true,
-                ask_to_create_config,
+                create_scaffold,
             );
         } else {
             config_files::read_default_env_file(engine_state, &mut stack)
@@ -63,12 +54,7 @@ pub(crate) fn run_commands(
         perf!("read env.nu", start_time, use_color);
 
         let start_time = std::time::Instant::now();
-        let ask_to_create_config = if let Some(mut config_path) = nu_path::config_dir() {
-            config_path.push(config_files::NUSHELL_FOLDER);
-            !config_path.exists()
-        } else {
-            false
-        };
+        let create_scaffold = nu_path::nu_config_dir().map_or(false, |p| !p.exists());
 
         // If we have a config file parameter *OR* we have a login shell parameter, read the config file
         if parsed_nu_cli_args.config_file.is_some() || parsed_nu_cli_args.login_shell.is_some() {
@@ -77,7 +63,7 @@ pub(crate) fn run_commands(
                 &mut stack,
                 parsed_nu_cli_args.config_file,
                 false,
-                ask_to_create_config,
+                create_scaffold,
             );
         }
 
@@ -114,12 +100,13 @@ pub(crate) fn run_commands(
 
     if let Err(err) = result {
         report_shell_error(engine_state, &err);
-        std::process::exit(err.exit_code());
+        std::process::exit(err.exit_code().unwrap_or(0));
     }
 }
 
 pub(crate) fn run_file(
     engine_state: &mut EngineState,
+    mut stack: Stack,
     parsed_nu_cli_args: command::NushellCliArgs,
     use_color: bool,
     script_name: String,
@@ -127,11 +114,6 @@ pub(crate) fn run_file(
     input: PipelineData,
 ) {
     trace!("run_file");
-    let mut stack = Stack::new();
-
-    if stack.has_env_var(engine_state, "NU_DISABLE_IR") {
-        stack.use_ir = false;
-    }
 
     // if the --no-config-file(-n) option is NOT passed, load the plugin file,
     // load the default env file or custom (depending on parsed_nu_cli_args.env_file),
@@ -140,14 +122,9 @@ pub(crate) fn run_file(
     // if the --no-config-file(-n) flag is passed, do not load plugin, env, or config files
     if parsed_nu_cli_args.no_config_file.is_none() {
         let start_time = std::time::Instant::now();
-        let ask_to_create_config = if let Some(mut config_path) = nu_path::config_dir() {
-            config_path.push(config_files::NUSHELL_FOLDER);
-            !config_path.exists()
-        } else {
-            false
-        };
+        let create_scaffold = nu_path::nu_config_dir().map_or(false, |p| !p.exists());
         #[cfg(feature = "plugin")]
-        read_plugin_file(engine_state, parsed_nu_cli_args.plugin_file, NUSHELL_FOLDER);
+        read_plugin_file(engine_state, parsed_nu_cli_args.plugin_file);
         perf!("read plugins", start_time, use_color);
 
         let start_time = std::time::Instant::now();
@@ -158,7 +135,7 @@ pub(crate) fn run_file(
                 &mut stack,
                 parsed_nu_cli_args.env_file,
                 true,
-                ask_to_create_config,
+                create_scaffold,
             );
         } else {
             config_files::read_default_env_file(engine_state, &mut stack)
@@ -172,7 +149,7 @@ pub(crate) fn run_file(
                 &mut stack,
                 parsed_nu_cli_args.config_file,
                 false,
-                ask_to_create_config,
+                create_scaffold,
             );
         }
         perf!("read config.nu", start_time, use_color);
@@ -193,22 +170,18 @@ pub(crate) fn run_file(
 
     if let Err(err) = result {
         report_shell_error(engine_state, &err);
-        std::process::exit(err.exit_code());
+        std::process::exit(err.exit_code().unwrap_or(0));
     }
 }
 
 pub(crate) fn run_repl(
     engine_state: &mut EngineState,
+    mut stack: Stack,
     parsed_nu_cli_args: command::NushellCliArgs,
     entire_start_time: std::time::Instant,
 ) -> Result<(), miette::ErrReport> {
     trace!("run_repl");
-    let mut stack = Stack::new();
     let start_time = std::time::Instant::now();
-
-    if stack.has_env_var(engine_state, "NU_DISABLE_IR") {
-        stack.use_ir = false;
-    }
 
     if parsed_nu_cli_args.no_config_file.is_none() {
         setup_config(
@@ -223,14 +196,16 @@ pub(crate) fn run_repl(
     }
 
     // Reload use_color from config in case it's different from the default value
-    let use_color = engine_state.get_config().use_ansi_coloring;
+    let use_color = engine_state
+        .get_config()
+        .use_ansi_coloring
+        .get(engine_state);
     perf!("setup_config", start_time, use_color);
 
     let start_time = std::time::Instant::now();
     let ret_val = evaluate_repl(
         engine_state,
         stack,
-        NUSHELL_FOLDER,
         parsed_nu_cli_args.execute,
         parsed_nu_cli_args.no_std_lib,
         entire_start_time,

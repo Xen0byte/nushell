@@ -202,7 +202,7 @@ fn errors_if_source_doesnt_exist() {
             cwd: dirs.test(),
             "mv non-existing-file test_folder/"
         );
-        assert!(actual.err.contains("Directory not found"));
+        assert!(actual.err.contains("nu::shell::io::not_found"));
     })
 }
 
@@ -513,13 +513,18 @@ fn test_mv_no_clobber() {
         sandbox.with_files(&[EmptyFile(file_a)]);
         sandbox.with_files(&[EmptyFile(file_b)]);
 
-        let actual = nu!(
+        let _ = nu!(
             cwd: dirs.test(),
             "mv -n {} {}",
             file_a,
             file_b,
         );
-        assert!(actual.err.contains("not replacing"));
+
+        let file_count = nu!(
+            cwd: dirs.test(),
+            "ls test_mv* | length | to nuon"
+        );
+        assert_eq!(file_count.out, "2");
     })
 }
 

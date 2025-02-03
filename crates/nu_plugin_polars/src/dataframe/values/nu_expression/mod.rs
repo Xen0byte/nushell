@@ -146,7 +146,7 @@ pub fn expr_to_value(expr: &Expr, span: Span) -> Result<Value, ShellError> {
         Expr::Alias(expr, alias) => Ok(Value::record(
             record! {
                 "expr" => expr_to_value(expr.as_ref(), span)?,
-                "alias" => Value::string(alias.as_ref(), span),
+                "alias" => Value::string(alias.as_str(), span),
             },
             span,
         )),
@@ -215,12 +215,12 @@ pub fn expr_to_value(expr: &Expr, span: Span) -> Result<Value, ShellError> {
                 AggExpr::Quantile {
                     expr,
                     quantile,
-                    interpol,
+                    method,
                 } => Ok(Value::record(
                     record! {
                         "expr" => expr_to_value(expr.as_ref(), span)?,
                         "quantile" => expr_to_value(quantile.as_ref(), span)?,
-                        "interpol" => Value::string(format!("{interpol:?}"), span),
+                        "method" => Value::string(format!("{method:?}"), span),
                     },
                     span,
                 )),
@@ -271,7 +271,7 @@ pub fn expr_to_value(expr: &Expr, span: Span) -> Result<Value, ShellError> {
         )),
         Expr::Cast {
             expr,
-            data_type,
+            dtype: data_type,
             options,
         } => {
             let cast_option_str = match options {

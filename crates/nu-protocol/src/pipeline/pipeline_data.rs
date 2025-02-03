@@ -1,6 +1,7 @@
 use crate::{
     ast::{Call, PathMember},
     engine::{EngineState, Stack},
+    shell_error::io::IoError,
     ByteStream, ByteStreamType, Config, ListStream, OutDest, PipelineMetadata, Range, ShellError,
     Signals, Span, Type, Value,
 };
@@ -109,7 +110,7 @@ impl PipelineData {
     /// than would be returned by [`Value::get_type()`] on the result of
     /// [`.into_value()`](Self::into_value).
     ///
-    /// Specifically, a `ListStream` results in [`list stream`](Type::ListStream) rather than
+    /// Specifically, a `ListStream` results in `list<any>` rather than
     /// the fully complete [`list`](Type::List) type (which would require knowing the contents),
     /// and a `ByteStream` with [unknown](crate::ByteStreamType::Unknown) type results in
     /// [`any`](Type::Any) rather than [`string`](Type::String) or [`binary`](Type::Binary).
@@ -117,15 +118,61 @@ impl PipelineData {
         match self {
             PipelineData::Empty => Type::Nothing,
             PipelineData::Value(value, _) => value.get_type(),
-            PipelineData::ListStream(_, _) => Type::ListStream,
+            PipelineData::ListStream(_, _) => Type::list(Type::Any),
             PipelineData::ByteStream(stream, _) => stream.type_().into(),
+        }
+    }
+
+    /// Determine if the `PipelineData` is a [subtype](https://en.wikipedia.org/wiki/Subtyping) of `other`.
+    ///
+    /// This check makes no effort to collect a stream, so it may be a different result
+    /// than would be returned by calling [`Value::is_subtype_of()`] on the result of
+    /// [`.into_value()`](Self::into_value).
+    ///
+    /// A `ListStream` acts the same as an empty list type: it is a subtype of any [`list`](Type::List)
+    /// or [`table`](Type::Table) type. After converting to a value, it may become a more specific type.
+    /// For example, a `ListStream` is a subtype of `list<int>` and `list<string>`.
+    /// If calling [`.into_value()`](Self::into_value) results in a `list<int>`,
+    /// then the value would not be a subtype of `list<string>`, in contrast to the original `ListStream`.
+    ///
+    /// A `ByteStream` is a subtype of [`string`](Type::String) if it is coercible into a string.
+    /// Likewise, a `ByteStream` is a subtype of [`binary`](Type::Binary) if it is coercible into a binary value.
+    pub fn is_subtype_of(&self, other: &Type) -> bool {
+        match (self, other) {
+            (_, Type::Any) => true,
+            (PipelineData::Empty, Type::Nothing) => true,
+            (PipelineData::Value(val, ..), ty) => val.is_subtype_of(ty),
+
+            // a list stream could be a list with any type, including a table
+            (PipelineData::ListStream(..), Type::List(..) | Type::Table(..)) => true,
+
+            (PipelineData::ByteStream(stream, ..), Type::String)
+                if stream.type_().is_string_coercible() =>
+            {
+                true
+            }
+            (PipelineData::ByteStream(stream, ..), Type::Binary)
+                if stream.type_().is_binary_coercible() =>
+            {
+                true
+            }
+
+            (PipelineData::Empty, _) => false,
+            (PipelineData::ListStream(..), _) => false,
+            (PipelineData::ByteStream(..), _) => false,
         }
     }
 
     pub fn into_value(self, span: Span) -> Result<Value, ShellError> {
         match self {
             PipelineData::Empty => Ok(Value::nothing(span)),
-            PipelineData::Value(value, ..) => Ok(value.with_span(span)),
+            PipelineData::Value(value, ..) => {
+                if value.span() == Span::unknown() {
+                    Ok(value.with_span(span))
+                } else {
+                    Ok(value)
+                }
+            }
             PipelineData::ListStream(stream, ..) => Ok(stream.into_value()),
             PipelineData::ByteStream(stream, ..) => stream.into_value(),
         }
@@ -165,66 +212,101 @@ impl PipelineData {
         }
     }
 
-    /// Writes all values or redirects all output to the current [`OutDest`]s in `stack`.
+    /// Drain and write this [`PipelineData`] to `dest`.
     ///
-    /// For [`OutDest::Pipe`] and [`OutDest::PipeSeparate`], this will return the `PipelineData` as
-    /// is without consuming input and without writing anything.
+    /// Values are converted to bytes and separated by newlines if this is a `ListStream`.
+    pub fn write_to(self, mut dest: impl Write) -> Result<(), ShellError> {
+        match self {
+            PipelineData::Empty => Ok(()),
+            PipelineData::Value(value, ..) => {
+                let bytes = value_to_bytes(value)?;
+                dest.write_all(&bytes).map_err(|err| {
+                    IoError::new_internal(
+                        err.kind(),
+                        "Could not write PipelineData to dest",
+                        crate::location!(),
+                    )
+                })?;
+                dest.flush().map_err(|err| {
+                    IoError::new_internal(
+                        err.kind(),
+                        "Could not flush PipelineData to dest",
+                        crate::location!(),
+                    )
+                })?;
+                Ok(())
+            }
+            PipelineData::ListStream(stream, ..) => {
+                for value in stream {
+                    let bytes = value_to_bytes(value)?;
+                    dest.write_all(&bytes).map_err(|err| {
+                        IoError::new_internal(
+                            err.kind(),
+                            "Could not write PipelineData to dest",
+                            crate::location!(),
+                        )
+                    })?;
+                    dest.write_all(b"\n").map_err(|err| {
+                        IoError::new_internal(
+                            err.kind(),
+                            "Could not write linebreak after PipelineData to dest",
+                            crate::location!(),
+                        )
+                    })?;
+                }
+                dest.flush().map_err(|err| {
+                    IoError::new_internal(
+                        err.kind(),
+                        "Could not flush PipelineData to dest",
+                        crate::location!(),
+                    )
+                })?;
+                Ok(())
+            }
+            PipelineData::ByteStream(stream, ..) => stream.write_to(dest),
+        }
+    }
+
+    /// Drain this [`PipelineData`] according to the current stdout [`OutDest`]s in `stack`.
     ///
-    /// For the other [`OutDest`]s, the given `PipelineData` will be completely consumed
-    /// and `PipelineData::Empty` will be returned (assuming no errors).
-    pub fn write_to_out_dests(
+    /// For [`OutDest::Pipe`] and [`OutDest::PipeSeparate`], this will return the [`PipelineData`]
+    /// as is. For [`OutDest::Value`], this will collect into a value and return it. For
+    /// [`OutDest::Print`], the [`PipelineData`] is drained and printed. Otherwise, the
+    /// [`PipelineData`] is drained, but only printed if it is the output of an external command.
+    pub fn drain_to_out_dests(
         self,
         engine_state: &EngineState,
         stack: &mut Stack,
-    ) -> Result<PipelineData, ShellError> {
-        match (self, stack.stdout()) {
-            (PipelineData::Empty, ..) => {}
-            (data, OutDest::Pipe | OutDest::PipeSeparate) => return Ok(data),
-            (data, OutDest::Value) => {
-                let metadata = data.metadata();
-                let span = data.span().unwrap_or(Span::unknown());
-                return data
-                    .into_value(span)
-                    .map(|val| PipelineData::Value(val, metadata));
+    ) -> Result<Self, ShellError> {
+        match stack.pipe_stdout().unwrap_or(&OutDest::Inherit) {
+            OutDest::Print => {
+                self.print_table(engine_state, stack, false, false)?;
+                Ok(Self::Empty)
             }
-            (PipelineData::ByteStream(stream, ..), stdout) => {
-                stream.write_to_out_dests(stdout, stack.stderr())?;
+            OutDest::Pipe | OutDest::PipeSeparate => Ok(self),
+            OutDest::Value => {
+                let metadata = self.metadata();
+                let span = self.span().unwrap_or(Span::unknown());
+                self.into_value(span).map(|val| Self::Value(val, metadata))
             }
-            (PipelineData::Value(..), OutDest::Null) => {}
-            (PipelineData::ListStream(stream, ..), OutDest::Null) => {
-                // we need to drain the stream in case there are external commands in the pipeline
-                stream.drain()?;
+            OutDest::File(file) => {
+                self.write_to(file.as_ref())?;
+                Ok(Self::Empty)
             }
-            (PipelineData::Value(value, ..), OutDest::File(file)) => {
-                let bytes = value_to_bytes(value)?;
-                let mut file = file.as_ref();
-                file.write_all(&bytes)?;
-                file.flush()?;
-            }
-            (PipelineData::ListStream(stream, ..), OutDest::File(file)) => {
-                let mut file = file.as_ref();
-                // use BufWriter here?
-                for value in stream {
-                    let bytes = value_to_bytes(value)?;
-                    file.write_all(&bytes)?;
-                    file.write_all(b"\n")?;
-                }
-                file.flush()?;
-            }
-            (data @ (PipelineData::Value(..) | PipelineData::ListStream(..)), OutDest::Inherit) => {
-                data.print(engine_state, stack, false, false)?;
+            OutDest::Null | OutDest::Inherit => {
+                self.drain()?;
+                Ok(Self::Empty)
             }
         }
-        Ok(PipelineData::Empty)
     }
 
     pub fn drain(self) -> Result<(), ShellError> {
         match self {
-            PipelineData::Empty => Ok(()),
-            PipelineData::Value(Value::Error { error, .. }, ..) => Err(*error),
-            PipelineData::Value(..) => Ok(()),
-            PipelineData::ListStream(stream, ..) => stream.drain(),
-            PipelineData::ByteStream(stream, ..) => stream.drain(),
+            Self::Empty => Ok(()),
+            Self::Value(Value::Error { error, .. }, ..) => Err(*error),
+            Self::Value(..) => Ok(()),
+            Self::ListStream(stream, ..) => stream.drain(),
+            Self::ByteStream(stream, ..) => stream.drain(),
         }
     }
 
@@ -529,11 +611,14 @@ impl PipelineData {
         }
     }
 
-    /// Consume and print self data immediately.
+    /// Consume and print self data immediately, formatted using table command.
+    ///
+    /// This does not respect the display_output hook. If a value is being printed out by a command,
+    /// this function should be used. Otherwise, `nu_cli::util::print_pipeline` should be preferred.
     ///
     /// `no_newline` controls if we need to attach newline character to output.
     /// `to_stderr` controls if data is output to stderr, when the value is false, the data is output to stdout.
-    pub fn print(
+    pub fn print_table(
         self,
         engine_state: &EngineState,
         stack: &mut Stack,
@@ -579,9 +664,23 @@ impl PipelineData {
     ) -> Result<(), ShellError> {
         if let PipelineData::Value(Value::Binary { val: bytes, .. }, _) = self {
             if to_stderr {
-                stderr_write_all_and_flush(bytes)?;
+                stderr_write_all_and_flush(bytes).map_err(|err| {
+                    IoError::new_with_additional_context(
+                        err.kind(),
+                        Span::unknown(),
+                        None,
+                        "Writing to stderr failed",
+                    )
+                })?
             } else {
-                stdout_write_all_and_flush(bytes)?;
+                stdout_write_all_and_flush(bytes).map_err(|err| {
+                    IoError::new_with_additional_context(
+                        err.kind(),
+                        Span::unknown(),
+                        None,
+                        "Writing to stdout failed",
+                    )
+                })?
             }
             Ok(())
         } else {
@@ -612,9 +711,23 @@ impl PipelineData {
                 }
 
                 if to_stderr {
-                    stderr_write_all_and_flush(out)?
+                    stderr_write_all_and_flush(out).map_err(|err| {
+                        IoError::new_with_additional_context(
+                            err.kind(),
+                            Span::unknown(),
+                            None,
+                            "Writing to stderr failed",
+                        )
+                    })?
                 } else {
-                    stdout_write_all_and_flush(out)?
+                    stdout_write_all_and_flush(out).map_err(|err| {
+                        IoError::new_with_additional_context(
+                            err.kind(),
+                            Span::unknown(),
+                            None,
+                            "Writing to stdout failed",
+                        )
+                    })?
                 }
             }
 

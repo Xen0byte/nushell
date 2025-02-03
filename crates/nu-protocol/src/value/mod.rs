@@ -1,7 +1,6 @@
 mod custom_value;
 mod duration;
 mod filesize;
-mod from;
 mod from_value;
 mod glob;
 mod into_value;
@@ -9,6 +8,7 @@ mod range;
 #[cfg(test)]
 mod test_derive;
 
+pub mod format;
 pub mod record;
 pub use custom_value::CustomValue;
 pub use duration::*;
@@ -49,120 +49,120 @@ use std::{
 pub enum Value {
     Bool {
         val: bool,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Int {
         val: i64,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Float {
         val: f64,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     String {
         val: String,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Glob {
         val: String,
         no_expand: bool,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Filesize {
-        val: i64,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        val: Filesize,
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Duration {
         val: i64,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Date {
         val: DateTime<FixedOffset>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Range {
         val: Box<Range>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Record {
         val: SharedCow<Record>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     List {
         vals: Vec<Value>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Closure {
         val: Box<Closure>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Error {
         error: Box<ShellError>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Binary {
         val: Vec<u8>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     CellPath {
         val: CellPath,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Custom {
         val: Box<dyn CustomValue>,
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
     Nothing {
-        // note: spans are being refactored out of Value
-        // please use .span() instead of matching this span value
+        /// note: spans are being refactored out of Value
+        /// please use .span() instead of matching this span value
         #[serde(rename = "span")]
         internal_span: Span,
     },
@@ -302,7 +302,7 @@ impl Value {
     }
 
     /// Returns the inner `i64` filesize value or an error if this `Value` is not a filesize
-    pub fn as_filesize(&self) -> Result<i64, ShellError> {
+    pub fn as_filesize(&self) -> Result<Filesize, ShellError> {
         if let Value::Filesize { val, .. } = self {
             Ok(*val)
         } else {
@@ -367,6 +367,7 @@ impl Value {
     /// Returns this `Value` converted to a `str` or an error if it cannot be converted
     ///
     /// Only the following `Value` cases will return an `Ok` result:
+    /// - `Bool`
     /// - `Int`
     /// - `Float`
     /// - `String`
@@ -380,7 +381,8 @@ impl Value {
     ///     assert_eq!(
     ///         matches!(
     ///             val,
-    ///             Value::Int { .. }
+    ///             Value::Bool { .. }
+    ///                 | Value::Int { .. }
     ///                 | Value::Float { .. }
     ///                 | Value::String { .. }
     ///                 | Value::Glob { .. }
@@ -393,6 +395,7 @@ impl Value {
     /// ```
     pub fn coerce_str(&self) -> Result<Cow<str>, ShellError> {
         match self {
+            Value::Bool { val, .. } => Ok(Cow::Owned(val.to_string())),
             Value::Int { val, .. } => Ok(Cow::Owned(val.to_string())),
             Value::Float { val, .. } => Ok(Cow::Owned(val.to_string())),
             Value::String { val, .. } => Ok(Cow::Borrowed(val)),
@@ -420,6 +423,7 @@ impl Value {
     /// if you do not need to keep the original `Value` around.
     ///
     /// Only the following `Value` cases will return an `Ok` result:
+    /// - `Bool`
     /// - `Int`
     /// - `Float`
     /// - `String`
@@ -433,7 +437,8 @@ impl Value {
     ///     assert_eq!(
     ///         matches!(
     ///             val,
-    ///             Value::Int { .. }
+    ///             Value::Bool { .. }
+    ///                 | Value::Int { .. }
     ///                 | Value::Float { .. }
     ///                 | Value::String { .. }
     ///                 | Value::Glob { .. }
@@ -451,6 +456,7 @@ impl Value {
     /// Returns this `Value` converted to a `String` or an error if it cannot be converted
     ///
     /// Only the following `Value` cases will return an `Ok` result:
+    /// - `Bool`
     /// - `Int`
     /// - `Float`
     /// - `String`
@@ -464,7 +470,8 @@ impl Value {
     ///     assert_eq!(
     ///         matches!(
     ///             val,
-    ///             Value::Int { .. }
+    ///             Value::Bool { .. }
+    ///                 | Value::Int { .. }
     ///                 | Value::Float { .. }
     ///                 | Value::String { .. }
     ///                 | Value::Glob { .. }
@@ -478,6 +485,7 @@ impl Value {
     pub fn coerce_into_string(self) -> Result<String, ShellError> {
         let span = self.span();
         match self {
+            Value::Bool { val, .. } => Ok(val.to_string()),
             Value::Int { val, .. } => Ok(val.to_string()),
             Value::Float { val, .. } => Ok(val.to_string()),
             Value::String { val, .. } => Ok(val),
@@ -656,6 +664,36 @@ impl Value {
         }
     }
 
+    /// Interprets this `Value` as a boolean based on typical conventions for environment values.
+    ///
+    /// The following rules are used:
+    /// - Values representing `false`:
+    ///   - Empty strings or strings that equal to "false" in any case
+    ///   - The number `0` (as an integer, float or string)
+    ///   - `Nothing`
+    ///   - Explicit boolean `false`
+    /// - Values representing `true`:
+    ///   - Non-zero numbers (integer or float)
+    ///   - Non-empty strings
+    ///   - Explicit boolean `true`
+    ///
+    /// For all other, more complex variants of [`Value`], the function cannot determine a
+    /// boolean representation and returns `Err`.
+    pub fn coerce_bool(&self) -> Result<bool, ShellError> {
+        match self {
+            Value::Bool { val: false, .. } | Value::Int { val: 0, .. } | Value::Nothing { .. } => {
+                Ok(false)
+            }
+            Value::Float { val, .. } if val <= &f64::EPSILON => Ok(false),
+            Value::String { val, .. } => match val.trim().to_ascii_lowercase().as_str() {
+                "" | "0" | "false" => Ok(false),
+                _ => Ok(true),
+            },
+            Value::Bool { .. } | Value::Int { .. } | Value::Float { .. } => Ok(true),
+            _ => self.cant_convert_to("bool"),
+        }
+    }
+
     /// Returns a reference to the inner [`CustomValue`] trait object or an error if this `Value` is not a custom value
     pub fn as_custom_value(&self) -> Result<&dyn CustomValue, ShellError> {
         if let Value::Custom { val, .. } = self {
@@ -775,6 +813,66 @@ impl Value {
         }
     }
 
+    /// Determine of the [`Value`] is a [subtype](https://en.wikipedia.org/wiki/Subtyping) of `other`
+    ///
+    /// If you have a [`Value`], this method should always be used over chaining [`Value::get_type`] with [`Type::is_subtype_of`](crate::Type::is_subtype_of).
+    ///
+    /// This method is able to leverage that information encoded in a `Value` to provide more accurate
+    /// type comparison than if one were to collect the type into [`Type`](crate::Type) value with [`Value::get_type`].
+    ///
+    /// Empty lists are considered subtypes of all `list<T>` types.
+    ///
+    /// Lists of mixed records where some column is present in all record is a subtype of `table<column>`.
+    /// For example, `[{a: 1, b: 2}, {a: 1}]` is a subtype of `table<a: int>` (but not `table<a: int, b: int>`).
+    ///
+    /// See also: [`PipelineData::is_subtype_of`](crate::PipelineData::is_subtype_of)
+    pub fn is_subtype_of(&self, other: &Type) -> bool {
+        // records are structurally typed
+        let record_compatible = |val: &Value, other: &[(String, Type)]| match val {
+            Value::Record { val, .. } => other
+                .iter()
+                .all(|(key, ty)| val.get(key).is_some_and(|inner| inner.is_subtype_of(ty))),
+            _ => false,
+        };
+
+        // All cases matched explicitly to ensure this does not accidentally allocate `Type` if any composite types are introduced in the future
+        match (self, other) {
+            (_, Type::Any) => true,
+
+            // `Type` allocation for scalar types is trivial
+            (
+                Value::Bool { .. }
+                | Value::Int { .. }
+                | Value::Float { .. }
+                | Value::String { .. }
+                | Value::Glob { .. }
+                | Value::Filesize { .. }
+                | Value::Duration { .. }
+                | Value::Date { .. }
+                | Value::Range { .. }
+                | Value::Closure { .. }
+                | Value::Error { .. }
+                | Value::Binary { .. }
+                | Value::CellPath { .. }
+                | Value::Nothing { .. },
+                _,
+            ) => self.get_type().is_subtype_of(other),
+
+            // matching composite types
+            (val @ Value::Record { .. }, Type::Record(inner)) => record_compatible(val, inner),
+            (Value::List { vals, .. }, Type::List(inner)) => {
+                vals.iter().all(|val| val.is_subtype_of(inner))
+            }
+            (Value::List { vals, .. }, Type::Table(inner)) => {
+                vals.iter().all(|val| record_compatible(val, inner))
+            }
+            (Value::Custom { val, .. }, Type::Custom(inner)) => val.type_name() == **inner,
+
+            // non-matching composite types
+            (Value::Record { .. } | Value::List { .. } | Value::Custom { .. }, _) => false,
+        }
+    }
+
     pub fn get_data_by_key(&self, name: &str) -> Option<Value> {
         let span = self.span();
         match self {
@@ -838,7 +936,7 @@ impl Value {
             Value::Bool { val, .. } => val.to_string(),
             Value::Int { val, .. } => val.to_string(),
             Value::Float { val, .. } => val.to_string(),
-            Value::Filesize { val, .. } => format_filesize_from_conf(*val, config),
+            Value::Filesize { val, .. } => config.filesize.display(*val).to_string(),
             Value::Duration { val, .. } => format_duration(*val),
             Value::Date { val, .. } => match &config.datetime_format.normal {
                 Some(format) => self.format_datetime(val, format),
@@ -871,7 +969,7 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(separator)
             ),
-            Value::Closure { val, .. } => format!("<Closure {}>", val.block_id.get()),
+            Value::Closure { val, .. } => format!("closure_{}", val.block_id.get()),
             Value::Nothing { .. } => String::new(),
             Value::Error { error, .. } => format!("{error:?}"),
             Value::Binary { val, .. } => format!("{val:?}"),
@@ -1820,9 +1918,9 @@ impl Value {
         }
     }
 
-    pub fn filesize(val: i64, span: Span) -> Value {
+    pub fn filesize(val: impl Into<Filesize>, span: Span) -> Value {
         Value::Filesize {
-            val,
+            val: val.into(),
             internal_span: span,
         }
     }
@@ -1939,7 +2037,7 @@ impl Value {
 
     /// Note: Only use this for test data, *not* live data, as it will point into unknown source
     /// when used in errors.
-    pub fn test_filesize(val: i64) -> Value {
+    pub fn test_filesize(val: impl Into<Filesize>) -> Value {
         Value::filesize(val, Span::test_data())
     }
 
@@ -2414,7 +2512,7 @@ impl PartialOrd for Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        self.partial_cmp(other).map_or(false, Ordering::is_eq)
+        self.partial_cmp(other).is_some_and(Ordering::is_eq)
     }
 }
 
@@ -2425,7 +2523,11 @@ impl Value {
                 if let Some(val) = lhs.checked_add(*rhs) {
                     Ok(Value::int(val, span))
                 } else {
-                    Err(ShellError::OperatorOverflow { msg: "add operation overflowed".into(), span, help: "Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into() })
+                    Err(ShellError::OperatorOverflow {
+                        msg: "add operation overflowed".into(),
+                        span,
+                        help: Some("Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into()),
+                     })
                 }
             }
             (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
@@ -2441,6 +2543,17 @@ impl Value {
                 Ok(Value::string(lhs.to_string() + rhs, span))
             }
 
+            (Value::Duration { val: lhs, .. }, Value::Date { val: rhs, .. }) => {
+                if let Some(val) = rhs.checked_add_signed(chrono::Duration::nanoseconds(*lhs)) {
+                    Ok(Value::date(val, span))
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "addition operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
+            }
             (Value::Date { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
                 if let Some(val) = lhs.checked_add_signed(chrono::Duration::nanoseconds(*rhs)) {
                     Ok(Value::date(val, span))
@@ -2448,7 +2561,7 @@ impl Value {
                     Err(ShellError::OperatorOverflow {
                         msg: "addition operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     })
                 }
             }
@@ -2459,18 +2572,18 @@ impl Value {
                     Err(ShellError::OperatorOverflow {
                         msg: "add operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     })
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-                if let Some(val) = lhs.checked_add(*rhs) {
+                if let Some(val) = *lhs + *rhs {
                     Ok(Value::filesize(val, span))
                 } else {
                     Err(ShellError::OperatorOverflow {
                         msg: "add operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     })
                 }
             }
@@ -2489,34 +2602,20 @@ impl Value {
         }
     }
 
-    pub fn append(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
+    pub fn concat(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
         match (self, rhs) {
             (Value::List { vals: lhs, .. }, Value::List { vals: rhs, .. }) => {
-                let mut lhs = lhs.clone();
-                let mut rhs = rhs.clone();
-                lhs.append(&mut rhs);
-                Ok(Value::list(lhs, span))
-            }
-            (Value::List { vals: lhs, .. }, val) => {
-                let mut lhs = lhs.clone();
-                lhs.push(val.clone());
-                Ok(Value::list(lhs, span))
-            }
-            (val, Value::List { vals: rhs, .. }) => {
-                let mut rhs = rhs.clone();
-                rhs.insert(0, val.clone());
-                Ok(Value::list(rhs, span))
+                Ok(Value::list([lhs.as_slice(), rhs.as_slice()].concat(), span))
             }
             (Value::String { val: lhs, .. }, Value::String { val: rhs, .. }) => {
-                Ok(Value::string(lhs.to_string() + rhs, span))
+                Ok(Value::string([lhs.as_str(), rhs.as_str()].join(""), span))
             }
-            (Value::Binary { val: lhs, .. }, Value::Binary { val: rhs, .. }) => {
-                let mut val = lhs.clone();
-                val.extend(rhs);
-                Ok(Value::binary(val, span))
-            }
+            (Value::Binary { val: lhs, .. }, Value::Binary { val: rhs, .. }) => Ok(Value::binary(
+                [lhs.as_slice(), rhs.as_slice()].concat(),
+                span,
+            )),
             (Value::Custom { val: lhs, .. }, rhs) => {
-                lhs.operation(self.span(), Operator::Math(Math::Append), op, rhs)
+                lhs.operation(self.span(), Operator::Math(Math::Concat), op, rhs)
             }
             _ => Err(ShellError::OperatorMismatch {
                 op_span: op,
@@ -2534,7 +2633,11 @@ impl Value {
                 if let Some(val) = lhs.checked_sub(*rhs) {
                     Ok(Value::int(val, span))
                 } else {
-                    Err(ShellError::OperatorOverflow { msg: "subtraction operation overflowed".into(), span, help: "Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into() })
+                    Err(ShellError::OperatorOverflow {
+                        msg: "subtraction operation overflowed".into(),
+                        span,
+                        help: Some("Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into()),
+                    })
                 }
             }
             (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
@@ -2555,7 +2658,7 @@ impl Value {
                     Err(ShellError::OperatorOverflow {
                         msg: "subtraction operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     })
                 }
             }
@@ -2565,7 +2668,7 @@ impl Value {
                     _ => Err(ShellError::OperatorOverflow {
                         msg: "subtraction operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     }),
                 }
             }
@@ -2576,18 +2679,18 @@ impl Value {
                     Err(ShellError::OperatorOverflow {
                         msg: "subtraction operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     })
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-                if let Some(val) = lhs.checked_sub(*rhs) {
+                if let Some(val) = *lhs - *rhs {
                     Ok(Value::filesize(val, span))
                 } else {
                     Err(ShellError::OperatorOverflow {
                         msg: "add operation overflowed".into(),
                         span,
-                        help: "".into(),
+                        help: None,
                     })
                 }
             }
@@ -2612,7 +2715,11 @@ impl Value {
                 if let Some(val) = lhs.checked_mul(*rhs) {
                     Ok(Value::int(val, span))
                 } else {
-                    Err(ShellError::OperatorOverflow { msg: "multiply operation overflowed".into(), span, help: "Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into() })
+                    Err(ShellError::OperatorOverflow {
+                        msg: "multiply operation overflowed".into(),
+                        span,
+                        help: Some("Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into()),
+                    })
                 }
             }
             (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
@@ -2625,16 +2732,48 @@ impl Value {
                 Ok(Value::float(lhs * rhs, span))
             }
             (Value::Int { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-                Ok(Value::filesize(*lhs * *rhs, span))
+                if let Some(val) = *lhs * *rhs {
+                    Ok(Value::filesize(val, span))
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "multiply operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
             }
             (Value::Filesize { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                Ok(Value::filesize(*lhs * *rhs, span))
+                if let Some(val) = *lhs * *rhs {
+                    Ok(Value::filesize(val, span))
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "multiply operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
             }
             (Value::Float { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-                Ok(Value::filesize((*lhs * *rhs as f64) as i64, span))
+                if let Some(val) = *lhs * *rhs {
+                    Ok(Value::filesize(val, span))
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "multiply operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
             }
             (Value::Filesize { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                Ok(Value::filesize((*lhs as f64 * *rhs) as i64, span))
+                if let Some(val) = *lhs * *rhs {
+                    Ok(Value::filesize(val, span))
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "multiply operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
             }
             (Value::Int { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
                 Ok(Value::duration(*lhs * *rhs, span))
@@ -2664,14 +2803,10 @@ impl Value {
     pub fn div(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
         match (self, rhs) {
             (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    if lhs % rhs == 0 {
-                        Ok(Value::int(lhs / rhs, span))
-                    } else {
-                        Ok(Value::float((*lhs as f64) / (*rhs as f64), span))
-                    }
-                } else {
+                if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Ok(Value::float(*lhs as f64 / *rhs as f64, span))
                 }
             }
             (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
@@ -2696,57 +2831,72 @@ impl Value {
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    if lhs % rhs == 0 {
-                        Ok(Value::int(lhs / rhs, span))
-                    } else {
-                        Ok(Value::float((*lhs as f64) / (*rhs as f64), span))
-                    }
-                } else {
+                if *rhs == Filesize::ZERO {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Ok(Value::float(lhs.get() as f64 / rhs.get() as f64, span))
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::filesize(
-                        ((*lhs as f64) / (*rhs as f64)) as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = lhs.get().checked_div(*rhs) {
+                    Ok(Value::filesize(val, span))
+                } else if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
                 if *rhs != 0.0 {
-                    Ok(Value::filesize((*lhs as f64 / rhs) as i64, span))
+                    if let Ok(val) = Filesize::try_from(lhs.get() as f64 / rhs) {
+                        Ok(Value::filesize(val, span))
+                    } else {
+                        Err(ShellError::OperatorOverflow {
+                            msg: "division operation overflowed".into(),
+                            span,
+                            help: None,
+                        })
+                    }
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
             }
             (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    if lhs % rhs == 0 {
-                        Ok(Value::int(lhs / rhs, span))
-                    } else {
-                        Ok(Value::float((*lhs as f64) / (*rhs as f64), span))
-                    }
-                } else {
+                if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Ok(Value::float(*lhs as f64 / *rhs as f64, span))
                 }
             }
             (Value::Duration { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::duration(
-                        ((*lhs as f64) / (*rhs as f64)) as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = lhs.checked_div(*rhs) {
+                    Ok(Value::duration(val, span))
+                } else if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Duration { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
                 if *rhs != 0.0 {
-                    Ok(Value::duration(((*lhs as f64) / rhs) as i64, span))
+                    let val = *lhs as f64 / rhs;
+                    if i64::MIN as f64 <= val && val <= i64::MAX as f64 {
+                        Ok(Value::duration(val as i64, span))
+                    } else {
+                        Err(ShellError::OperatorOverflow {
+                            msg: "division operation overflowed".into(),
+                            span,
+                            help: None,
+                        })
+                    }
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
@@ -2766,127 +2916,305 @@ impl Value {
     }
 
     pub fn floor_div(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
+        // Taken from the unstable `div_floor` function in the std library.
+        fn checked_div_floor_i64(dividend: i64, divisor: i64) -> Option<i64> {
+            let quotient = dividend.checked_div(divisor)?;
+            let remainder = dividend.checked_rem(divisor)?;
+            if (remainder > 0 && divisor < 0) || (remainder < 0 && divisor > 0) {
+                // Note that `quotient - 1` cannot overflow, because:
+                //     `quotient` would have to be `i64::MIN`
+                //     => `divisor` would have to be `1`
+                //     => `remainder` would have to be `0`
+                // But `remainder == 0` is excluded from the check above.
+                Some(quotient - 1)
+            } else {
+                Some(quotient)
+            }
+        }
+
+        fn checked_div_floor_f64(dividend: f64, divisor: f64) -> Option<f64> {
+            if divisor == 0.0 {
+                None
+            } else {
+                Some((dividend / divisor).floor())
+            }
+        }
+
         match (self, rhs) {
             (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::int(
-                        (*lhs as f64 / *rhs as f64)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = checked_div_floor_i64(*lhs, *rhs) {
+                    Ok(Value::int(val, span))
+                } else if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                if *rhs != 0.0 {
-                    Ok(Value::int(
-                        (*lhs as f64 / *rhs)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
+                if let Some(val) = checked_div_floor_f64(*lhs as f64, *rhs) {
+                    Ok(Value::float(val, span))
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
             }
             (Value::Float { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::int(
-                        (*lhs / *rhs as f64)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
+                if let Some(val) = checked_div_floor_f64(*lhs, *rhs as f64) {
+                    Ok(Value::float(val, span))
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
             }
             (Value::Float { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                if *rhs != 0.0 {
-                    Ok(Value::int(
-                        (lhs / rhs).clamp(i64::MIN as f64, i64::MAX as f64).floor() as i64,
-                        span,
-                    ))
+                if let Some(val) = checked_div_floor_f64(*lhs, *rhs) {
+                    Ok(Value::float(val, span))
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::int(
-                        (*lhs as f64 / *rhs as f64)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = checked_div_floor_i64(lhs.get(), rhs.get()) {
+                    Ok(Value::int(val, span))
+                } else if *rhs == Filesize::ZERO {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::filesize(
-                        ((*lhs as f64) / (*rhs as f64))
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = checked_div_floor_i64(lhs.get(), *rhs) {
+                    Ok(Value::filesize(val, span))
+                } else if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Filesize { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                if *rhs != 0.0 {
-                    Ok(Value::filesize(
-                        (*lhs as f64 / *rhs)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
+                if let Some(val) = checked_div_floor_f64(lhs.get() as f64, *rhs) {
+                    if let Ok(val) = Filesize::try_from(val) {
+                        Ok(Value::filesize(val, span))
+                    } else {
+                        Err(ShellError::OperatorOverflow {
+                            msg: "division operation overflowed".into(),
+                            span,
+                            help: None,
+                        })
+                    }
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
             }
             (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::int(
-                        (*lhs as f64 / *rhs as f64)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = checked_div_floor_i64(*lhs, *rhs) {
+                    Ok(Value::int(val, span))
+                } else if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Duration { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::duration(
-                        (*lhs as f64 / *rhs as f64)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
-                } else {
+                if let Some(val) = checked_div_floor_i64(*lhs, *rhs) {
+                    Ok(Value::duration(val, span))
+                } else if *rhs == 0 {
                     Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
                 }
             }
             (Value::Duration { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                if *rhs != 0.0 {
-                    Ok(Value::duration(
-                        (*lhs as f64 / *rhs)
-                            .clamp(i64::MIN as f64, i64::MAX as f64)
-                            .floor() as i64,
-                        span,
-                    ))
+                if let Some(val) = checked_div_floor_f64(*lhs as f64, *rhs) {
+                    if i64::MIN as f64 <= val && val <= i64::MAX as f64 {
+                        Ok(Value::duration(val as i64, span))
+                    } else {
+                        Err(ShellError::OperatorOverflow {
+                            msg: "division operation overflowed".into(),
+                            span,
+                            help: None,
+                        })
+                    }
                 } else {
                     Err(ShellError::DivisionByZero { span: op })
                 }
             }
             (Value::Custom { val: lhs, .. }, rhs) => {
                 lhs.operation(self.span(), Operator::Math(Math::Divide), op, rhs)
+            }
+            _ => Err(ShellError::OperatorMismatch {
+                op_span: op,
+                lhs_ty: self.get_type().to_string(),
+                lhs_span: self.span(),
+                rhs_ty: rhs.get_type().to_string(),
+                rhs_span: rhs.span(),
+            }),
+        }
+    }
+
+    pub fn modulo(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
+        // Based off the unstable `div_floor` function in the std library.
+        fn checked_mod_i64(dividend: i64, divisor: i64) -> Option<i64> {
+            let remainder = dividend.checked_rem(divisor)?;
+            if (remainder > 0 && divisor < 0) || (remainder < 0 && divisor > 0) {
+                // Note that `remainder + divisor` cannot overflow, because `remainder` and
+                // `divisor` have opposite signs.
+                Some(remainder + divisor)
+            } else {
+                Some(remainder)
+            }
+        }
+
+        fn checked_mod_f64(dividend: f64, divisor: f64) -> Option<f64> {
+            if divisor == 0.0 {
+                None
+            } else {
+                let remainder = dividend % divisor;
+                if (remainder > 0.0 && divisor < 0.0) || (remainder < 0.0 && divisor > 0.0) {
+                    Some(remainder + divisor)
+                } else {
+                    Some(remainder)
+                }
+            }
+        }
+
+        match (self, rhs) {
+            (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_i64(*lhs, *rhs) {
+                    Ok(Value::int(val, span))
+                } else if *rhs == 0 {
+                    Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "modulo operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
+            }
+            (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_f64(*lhs as f64, *rhs) {
+                    Ok(Value::float(val, span))
+                } else {
+                    Err(ShellError::DivisionByZero { span: op })
+                }
+            }
+            (Value::Float { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_f64(*lhs, *rhs as f64) {
+                    Ok(Value::float(val, span))
+                } else {
+                    Err(ShellError::DivisionByZero { span: op })
+                }
+            }
+            (Value::Float { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_f64(*lhs, *rhs) {
+                    Ok(Value::float(val, span))
+                } else {
+                    Err(ShellError::DivisionByZero { span: op })
+                }
+            }
+            (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_i64(lhs.get(), rhs.get()) {
+                    Ok(Value::filesize(val, span))
+                } else if *rhs == Filesize::ZERO {
+                    Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "modulo operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
+            }
+            (Value::Filesize { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_i64(lhs.get(), *rhs) {
+                    Ok(Value::filesize(val, span))
+                } else if *rhs == 0 {
+                    Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "modulo operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
+            }
+            (Value::Filesize { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_f64(lhs.get() as f64, *rhs) {
+                    if let Ok(val) = Filesize::try_from(val) {
+                        Ok(Value::filesize(val, span))
+                    } else {
+                        Err(ShellError::OperatorOverflow {
+                            msg: "modulo operation overflowed".into(),
+                            span,
+                            help: None,
+                        })
+                    }
+                } else {
+                    Err(ShellError::DivisionByZero { span: op })
+                }
+            }
+            (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_i64(*lhs, *rhs) {
+                    Ok(Value::duration(val, span))
+                } else if *rhs == 0 {
+                    Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
+            }
+            (Value::Duration { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_i64(*lhs, *rhs) {
+                    Ok(Value::duration(val, span))
+                } else if *rhs == 0 {
+                    Err(ShellError::DivisionByZero { span: op })
+                } else {
+                    Err(ShellError::OperatorOverflow {
+                        msg: "division operation overflowed".into(),
+                        span,
+                        help: None,
+                    })
+                }
+            }
+            (Value::Duration { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
+                if let Some(val) = checked_mod_f64(*lhs as f64, *rhs) {
+                    if i64::MIN as f64 <= val && val <= i64::MAX as f64 {
+                        Ok(Value::duration(val as i64, span))
+                    } else {
+                        Err(ShellError::OperatorOverflow {
+                            msg: "division operation overflowed".into(),
+                            span,
+                            help: None,
+                        })
+                    }
+                } else {
+                    Err(ShellError::DivisionByZero { span: op })
+                }
+            }
+            (Value::Custom { val: lhs, .. }, rhs) => {
+                lhs.operation(span, Operator::Math(Math::Modulo), op, rhs)
             }
 
             _ => Err(ShellError::OperatorMismatch {
@@ -3212,6 +3540,14 @@ impl Value {
         }
     }
 
+    pub fn has(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
+        rhs.r#in(op, self, span)
+    }
+
+    pub fn not_has(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
+        rhs.r#not_in(op, self, span)
+    }
+
     pub fn regex_match(
         &self,
         engine_state: &EngineState,
@@ -3334,7 +3670,7 @@ impl Value {
                         msg: "right operand to bit-shl exceeds available bits in underlying data"
                             .into(),
                         span,
-                        help: format!("Limit operand to 0 <= rhs < {}", i64::BITS),
+                        help: Some(format!("Limit operand to 0 <= rhs < {}", i64::BITS)),
                     })
                 }
             }
@@ -3363,7 +3699,7 @@ impl Value {
                         msg: "right operand to bit-shr exceeds available bits in underlying data"
                             .into(),
                         span,
-                        help: format!("Limit operand to 0 <= rhs < {}", i64::BITS),
+                        help: Some(format!("Limit operand to 0 <= rhs < {}", i64::BITS)),
                     })
                 }
             }
@@ -3434,57 +3770,6 @@ impl Value {
         }
     }
 
-    pub fn modulo(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
-        match (self, rhs) {
-            (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::int(lhs % rhs, span))
-                } else {
-                    Err(ShellError::DivisionByZero { span: op })
-                }
-            }
-            (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                if *rhs != 0.0 {
-                    Ok(Value::float(*lhs as f64 % *rhs, span))
-                } else {
-                    Err(ShellError::DivisionByZero { span: op })
-                }
-            }
-            (Value::Float { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::float(*lhs % *rhs as f64, span))
-                } else {
-                    Err(ShellError::DivisionByZero { span: op })
-                }
-            }
-            (Value::Float { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
-                if *rhs != 0.0 {
-                    Ok(Value::float(lhs % rhs, span))
-                } else {
-                    Err(ShellError::DivisionByZero { span: op })
-                }
-            }
-            (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
-                if *rhs != 0 {
-                    Ok(Value::duration(lhs % rhs, span))
-                } else {
-                    Err(ShellError::DivisionByZero { span: op })
-                }
-            }
-            (Value::Custom { val: lhs, .. }, rhs) => {
-                lhs.operation(span, Operator::Math(Math::Modulo), op, rhs)
-            }
-
-            _ => Err(ShellError::OperatorMismatch {
-                op_span: op,
-                lhs_ty: self.get_type().to_string(),
-                lhs_span: self.span(),
-                rhs_ty: rhs.get_type().to_string(),
-                rhs_span: rhs.span(),
-            }),
-        }
-    }
-
     pub fn and(&self, op: Span, rhs: &Value, span: Span) -> Result<Value, ShellError> {
         match (self, rhs) {
             (Value::Bool { val: lhs, .. }, Value::Bool { val: rhs, .. }) => {
@@ -3545,7 +3830,11 @@ impl Value {
                 if let Some(val) = lhs.checked_pow(*rhs as u32) {
                     Ok(Value::int(val, span))
                 } else {
-                    Err(ShellError::OperatorOverflow { msg: "pow operation overflowed".into(), span, help: "Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into() })
+                    Err(ShellError::OperatorOverflow {
+                        msg: "pow operation overflowed".into(),
+                        span,
+                        help: Some("Consider using floating point values for increased range by promoting operand with 'into float'. Note: float has reduced precision!".into()),
+                    })
                 }
             }
             (Value::Int { val: lhs, .. }, Value::Float { val: rhs, .. }) => {
@@ -3659,6 +3948,136 @@ mod tests {
         }
     }
 
+    mod is_subtype {
+        use crate::Type;
+
+        use super::*;
+
+        fn assert_subtype_equivalent(value: &Value, ty: &Type) {
+            assert_eq!(value.is_subtype_of(ty), value.get_type().is_subtype_of(ty));
+        }
+
+        #[test]
+        fn test_list() {
+            let ty_int_list = Type::list(Type::Int);
+            let ty_str_list = Type::list(Type::String);
+            let ty_any_list = Type::list(Type::Any);
+            let ty_list_list_int = Type::list(Type::list(Type::Int));
+
+            let list = Value::test_list(vec![
+                Value::test_int(1),
+                Value::test_int(2),
+                Value::test_int(3),
+            ]);
+
+            assert_subtype_equivalent(&list, &ty_int_list);
+            assert_subtype_equivalent(&list, &ty_str_list);
+            assert_subtype_equivalent(&list, &ty_any_list);
+
+            let list = Value::test_list(vec![
+                Value::test_int(1),
+                Value::test_string("hi"),
+                Value::test_int(3),
+            ]);
+
+            assert_subtype_equivalent(&list, &ty_int_list);
+            assert_subtype_equivalent(&list, &ty_str_list);
+            assert_subtype_equivalent(&list, &ty_any_list);
+
+            let list = Value::test_list(vec![Value::test_list(vec![Value::test_int(1)])]);
+
+            assert_subtype_equivalent(&list, &ty_list_list_int);
+
+            // The type of an empty lists is a subtype of any list or table type
+            let ty_table = Type::Table(Box::new([
+                ("a".into(), Type::Int),
+                ("b".into(), Type::Int),
+                ("c".into(), Type::Int),
+            ]));
+            let empty = Value::test_list(vec![]);
+
+            assert_subtype_equivalent(&empty, &ty_any_list);
+            assert!(empty.is_subtype_of(&ty_int_list));
+            assert!(empty.is_subtype_of(&ty_table));
+        }
+
+        #[test]
+        fn test_record() {
+            let ty_abc = Type::Record(Box::new([
+                ("a".into(), Type::Int),
+                ("b".into(), Type::Int),
+                ("c".into(), Type::Int),
+            ]));
+            let ty_ab = Type::Record(Box::new([("a".into(), Type::Int), ("b".into(), Type::Int)]));
+            let ty_inner = Type::Record(Box::new([("inner".into(), ty_abc.clone())]));
+
+            let record_abc = Value::test_record(record! {
+                "a" => Value::test_int(1),
+                "b" => Value::test_int(2),
+                "c" => Value::test_int(3),
+            });
+            let record_ab = Value::test_record(record! {
+                "a" => Value::test_int(1),
+                "b" => Value::test_int(2),
+            });
+
+            assert_subtype_equivalent(&record_abc, &ty_abc);
+            assert_subtype_equivalent(&record_abc, &ty_ab);
+            assert_subtype_equivalent(&record_ab, &ty_abc);
+            assert_subtype_equivalent(&record_ab, &ty_ab);
+
+            let record_inner = Value::test_record(record! {
+                "inner" => record_abc
+            });
+            assert_subtype_equivalent(&record_inner, &ty_inner);
+        }
+
+        #[test]
+        fn test_table() {
+            let ty_abc = Type::Table(Box::new([
+                ("a".into(), Type::Int),
+                ("b".into(), Type::Int),
+                ("c".into(), Type::Int),
+            ]));
+            let ty_ab = Type::Table(Box::new([("a".into(), Type::Int), ("b".into(), Type::Int)]));
+            let ty_list_any = Type::list(Type::Any);
+
+            let record_abc = Value::test_record(record! {
+                "a" => Value::test_int(1),
+                "b" => Value::test_int(2),
+                "c" => Value::test_int(3),
+            });
+            let record_ab = Value::test_record(record! {
+                "a" => Value::test_int(1),
+                "b" => Value::test_int(2),
+            });
+
+            let table_abc = Value::test_list(vec![record_abc.clone(), record_abc.clone()]);
+            let table_ab = Value::test_list(vec![record_ab.clone(), record_ab.clone()]);
+
+            assert_subtype_equivalent(&table_abc, &ty_abc);
+            assert_subtype_equivalent(&table_abc, &ty_ab);
+            assert_subtype_equivalent(&table_ab, &ty_abc);
+            assert_subtype_equivalent(&table_ab, &ty_ab);
+            assert_subtype_equivalent(&table_abc, &ty_list_any);
+
+            let table_mixed = Value::test_list(vec![record_abc.clone(), record_ab.clone()]);
+            assert_subtype_equivalent(&table_mixed, &ty_abc);
+            assert!(table_mixed.is_subtype_of(&ty_ab));
+
+            let ty_a = Type::Table(Box::new([("a".into(), Type::Any)]));
+            let table_mixed_types = Value::test_list(vec![
+                Value::test_record(record! {
+                    "a" => Value::test_int(1),
+                }),
+                Value::test_record(record! {
+                    "a" => Value::test_string("a"),
+                }),
+            ]);
+            assert!(table_mixed_types.is_subtype_of(&ty_a));
+        }
+    }
+
     mod into_string {
         use chrono::{DateTime, FixedOffset};
 
@@ -3691,5 +4110,41 @@ mod tests {
             let formatted = string.split(' ').next().unwrap();
             assert_eq!("-0316-02-11T06:13:20+00:00", formatted);
         }
+    }
+
+    #[test]
+    fn test_env_as_bool() {
+        // explicit false values
+        assert_eq!(Value::test_bool(false).coerce_bool(), Ok(false));
+        assert_eq!(Value::test_int(0).coerce_bool(), Ok(false));
+        assert_eq!(Value::test_float(0.0).coerce_bool(), Ok(false));
+        assert_eq!(Value::test_string("").coerce_bool(), Ok(false));
+        assert_eq!(Value::test_string("0").coerce_bool(), Ok(false));
+        assert_eq!(Value::test_nothing().coerce_bool(), Ok(false));
+
+        // explicit true values
+        assert_eq!(Value::test_bool(true).coerce_bool(), Ok(true));
+        assert_eq!(Value::test_int(1).coerce_bool(), Ok(true));
+        assert_eq!(Value::test_float(1.0).coerce_bool(), Ok(true));
+        assert_eq!(Value::test_string("1").coerce_bool(), Ok(true));
+
+        // implicit true values
+        assert_eq!(Value::test_int(42).coerce_bool(), Ok(true));
+        assert_eq!(Value::test_float(0.5).coerce_bool(), Ok(true));
+        assert_eq!(Value::test_string("not zero").coerce_bool(), Ok(true));
+
+        // complex values returning None
+        assert!(Value::test_record(Record::default()).coerce_bool().is_err());
+        assert!(Value::test_list(vec![Value::test_int(1)])
+            .coerce_bool()
+            .is_err());
+        assert!(Value::test_date(
+            chrono::DateTime::parse_from_rfc3339("2024-01-01T12:00:00+00:00").unwrap(),
+        )
+        .coerce_bool()
+        .is_err());
+        assert!(Value::test_glob("*.rs").coerce_bool().is_err());
+        assert!(Value::test_binary(vec![1, 2, 3]).coerce_bool().is_err());
+        assert!(Value::test_duration(3600).coerce_bool().is_err());
     }
 }

@@ -39,8 +39,8 @@ impl Command for SubCommand {
             )
             .named(
                 "max-time",
-                SyntaxShape::Int,
-                "timeout period in seconds",
+                SyntaxShape::Duration,
+                "max duration before timeout occurs",
                 Some('m'),
             )
             .named(
@@ -215,6 +215,7 @@ fn helper(
     request = request_add_custom_headers(args.headers, request)?;
 
     let response = send_request(
+        engine_state,
         request.clone(),
         args.data,
         args.content_type,

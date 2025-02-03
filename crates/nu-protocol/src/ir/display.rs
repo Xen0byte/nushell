@@ -7,7 +7,7 @@ pub struct FmtIrBlock<'a> {
     pub(super) ir_block: &'a IrBlock,
 }
 
-impl<'a> fmt::Display for FmtIrBlock<'a> {
+impl fmt::Display for FmtIrBlock<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let plural = |count| if count == 1 { "" } else { "s" };
         writeln!(
@@ -55,7 +55,7 @@ pub struct FmtInstruction<'a> {
     pub(super) data: &'a [u8],
 }
 
-impl<'a> fmt::Display for FmtInstruction<'a> {
+impl fmt::Display for FmtInstruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const WIDTH: usize = 22;
 
@@ -92,8 +92,8 @@ impl<'a> fmt::Display for FmtInstruction<'a> {
             Instruction::Drain { src } => {
                 write!(f, "{:WIDTH$} {src}", "drain")
             }
-            Instruction::WriteToOutDests { src } => {
-                write!(f, "{:WIDTH$} {src}", "write-to-out-dests")
+            Instruction::DrainIfEnd { src } => {
+                write!(f, "{:WIDTH$} {src}", "drain-if-end")
             }
             Instruction::LoadVariable { dst, var_id } => {
                 let var = FmtVar::new(self.engine_state, *var_id);
@@ -312,6 +312,7 @@ impl fmt::Display for RedirectMode {
             RedirectMode::Value => write!(f, "value"),
             RedirectMode::Null => write!(f, "null"),
             RedirectMode::Inherit => write!(f, "inherit"),
+            RedirectMode::Print => write!(f, "print"),
             RedirectMode::File { file_num } => write!(f, "file({file_num})"),
             RedirectMode::Caller => write!(f, "caller"),
         }
@@ -320,7 +321,7 @@ impl fmt::Display for RedirectMode {
 
 struct FmtData<'a>(&'a [u8], DataSlice);
 
-impl<'a> fmt::Display for FmtData<'a> {
+impl fmt::Display for FmtData<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Ok(s) = std::str::from_utf8(&self.0[self.1]) {
             // Write as string
@@ -337,7 +338,7 @@ struct FmtLiteral<'a> {
     data: &'a [u8],
 }
 
-impl<'a> fmt::Display for FmtLiteral<'a> {
+impl fmt::Display for FmtLiteral<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.literal {
             Literal::Bool(b) => write!(f, "bool({b:?})"),
@@ -386,7 +387,7 @@ struct FmtPattern<'a> {
     pattern: &'a Pattern,
 }
 
-impl<'a> fmt::Display for FmtPattern<'a> {
+impl fmt::Display for FmtPattern<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.pattern {
             Pattern::Record(bindings) => {
@@ -418,10 +419,13 @@ impl<'a> fmt::Display for FmtPattern<'a> {
                 }
                 f.write_str("]")
             }
-            Pattern::Value(expr) => {
+            Pattern::Expression(expr) => {
                 let string =
                     String::from_utf8_lossy(self.engine_state.get_span_contents(expr.span));
                 f.write_str(&string)
+            }
+            Pattern::Value(value) => {
+                f.write_str(&value.to_parsable_string(", ", &self.engine_state.config))
             }
             Pattern::Variable(var_id) => {
                 let variable = FmtVar::new(self.engine_state, *var_id);

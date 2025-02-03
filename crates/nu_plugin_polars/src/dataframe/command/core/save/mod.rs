@@ -14,8 +14,8 @@ use crate::{
 use nu_path::expand_path_with;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    Category, Example, LabeledError, PipelineData, ShellError, Signature, Span, Spanned,
-    SyntaxShape, Type,
+    shell_error::io::IoError, Category, Example, LabeledError, PipelineData, ShellError, Signature,
+    Span, Spanned, SyntaxShape, Type,
 };
 use polars::error::PolarsError;
 
@@ -204,10 +204,12 @@ fn command(
                 blamed,
             )),
         },
-        None => Err(ShellError::FileNotFoundCustom {
-            msg: "File without extension".into(),
-            span: spanned_file.span,
-        }),
+        None => Err(ShellError::Io(IoError::new_with_additional_context(
+            std::io::ErrorKind::NotFound,
+            spanned_file.span,
+            spanned_file.item,
+            "File without extension",
+        ))),
     }?;
 
     Ok(PipelineData::empty())
@@ -248,7 +250,7 @@ pub(crate) mod test {
         let tmp_file_str = tmp_file.to_str().expect("should be able to get file path");
 
         let cmd = format!("{cmd} {tmp_file_str}");
-        let mut plugin_test = PluginTest::new("polars", PolarsPlugin::default().into())?;
+        let mut plugin_test = PluginTest::new("polars", PolarsPlugin::new()?.into())?;
         plugin_test.engine_state_mut().add_env_var(
             "PWD".to_string(),
             Value::string(

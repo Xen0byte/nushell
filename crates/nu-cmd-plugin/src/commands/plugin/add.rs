@@ -1,8 +1,10 @@
 use crate::util::{get_plugin_dirs, modify_plugin_file};
 use nu_engine::command_prelude::*;
 use nu_plugin_engine::{GetPlugin, PersistentPlugin};
-use nu_protocol::{PluginGcConfig, PluginIdentity, PluginRegistryItem, RegisteredPlugin};
-use std::sync::Arc;
+use nu_protocol::{
+    shell_error::io::IoError, PluginGcConfig, PluginIdentity, PluginRegistryItem, RegisteredPlugin,
+};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
 pub struct PluginAdd;
@@ -86,11 +88,14 @@ apparent the next time `nu` is next launched with that plugin registry file.
         let filename_expanded = nu_path::locate_in_dirs(&filename.item, &cwd, || {
             get_plugin_dirs(engine_state, stack)
         })
-        .err_span(filename.span)?;
+        .map_err(|err| IoError::new(err.kind(), filename.span, PathBuf::from(filename.item)))?;
 
         let shell_expanded = shell
             .as_ref()
-            .map(|s| nu_path::canonicalize_with(&s.item, &cwd).err_span(s.span))
+            .map(|s| {
+                nu_path::canonicalize_with(&s.item, &cwd)
+                    .map_err(|err| IoError::new(err.kind(), s.span, None))
+            })
             .transpose()?;
 
         // Parse the plugin filename so it can be used to spawn the plugin
@@ -119,7 +124,7 @@ apparent the next time `nu` is next launched with that plugin registry file.
         let metadata = interface.get_metadata()?;
         let commands = interface.get_signature()?;
 
-        modify_plugin_file(engine_state, stack, call.head, custom_path, |contents| {
+        modify_plugin_file(engine_state, stack, call.head, &custom_path, |contents| {
             // Update the file with the received metadata and signatures
             let item = PluginRegistryItem::new(plugin.identity(), metadata, commands);
             contents.upsert_plugin(item);

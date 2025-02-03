@@ -1,4 +1,5 @@
 use nu_protocol::{
+    ast::Pattern,
     ir::{DataSlice, Instruction, IrAstRef, IrBlock, Literal},
     CompileError, IntoSpanned, RegId, Span, Spanned,
 };
@@ -205,7 +206,7 @@ impl BlockBuilder {
             Instruction::Span { src_dst } => allocate(&[*src_dst], &[*src_dst]),
             Instruction::Drop { src } => allocate(&[*src], &[]),
             Instruction::Drain { src } => allocate(&[*src], &[]),
-            Instruction::WriteToOutDests { src } => allocate(&[*src], &[]),
+            Instruction::DrainIfEnd { src } => allocate(&[*src], &[]),
             Instruction::LoadVariable { dst, var_id: _ } => allocate(&[], &[*dst]),
             Instruction::StoreVariable { var_id: _, src } => allocate(&[*src], &[]),
             Instruction::DropVariable { var_id: _ } => Ok(()),
@@ -424,6 +425,24 @@ impl BlockBuilder {
     /// Add a `jump` instruction
     pub(crate) fn jump(&mut self, label_id: LabelId, span: Span) -> Result<(), CompileError> {
         self.push(Instruction::Jump { index: label_id.0 }.into_spanned(span))
+    }
+
+    /// Add a `match` instruction
+    pub(crate) fn r#match(
+        &mut self,
+        pattern: Pattern,
+        src: RegId,
+        label_id: LabelId,
+        span: Span,
+    ) -> Result<(), CompileError> {
+        self.push(
+            Instruction::Match {
+                pattern: Box::new(pattern),
+                src,
+                index: label_id.0,
+            }
+            .into_spanned(span),
+        )
     }
 
     /// The index that the next instruction [`.push()`](Self::push)ed will have.

@@ -1021,6 +1021,21 @@ pub fn test_external_call_head_interpolated_string(
     r#"{a:1,b:c,c:d}"#,
     "value with single quote and double quote"
 )]
+#[case(
+    r#"^foo `hello world`"#,
+    r#"hello world"#,
+    "value is surrounded by backtick quote"
+)]
+#[case(
+    r#"^foo `"hello world"`"#,
+    "\"hello world\"",
+    "value is surrounded by backtick quote, with inner double quote"
+)]
+#[case(
+    r#"^foo `'hello world'`"#,
+    "'hello world'",
+    "value is surrounded by backtick quote, with inner single quote"
+)]
 pub fn test_external_call_arg_glob(#[case] input: &str, #[case] expected: &str, #[case] tag: &str) {
     test_external_call(input, tag, |name, args| {
         match &name.expr {
@@ -1226,6 +1241,18 @@ fn test_nothing_comparison_eq() {
     let element = &pipeline.elements[0];
     assert!(element.redirection.is_none());
     assert!(matches!(&element.expr.expr, Expr::BinaryOp(..)));
+}
+
+#[rstest]
+#[case(b"let a o> file = 1")]
+#[case(b"mut a o> file = 1")]
+fn test_redirection_inside_letmut_no_panic(#[case] phase: &[u8]) {
+    let engine_state = EngineState::new();
+    let mut working_set = StateWorkingSet::new(&engine_state);
+    working_set.add_decl(Box::new(Let));
+    working_set.add_decl(Box::new(Mut));
+
+    parse(&mut working_set, None, phase, true);
 }
 
 #[rstest]
@@ -2399,7 +2426,7 @@ mod input_types {
         add_declarations(&mut engine_state);
 
         let mut working_set = StateWorkingSet::new(&engine_state);
-        parse(
+        let block = parse(
             &mut working_set,
             None,
             b"if false { 'a' } else { $foo }",
@@ -2410,6 +2437,30 @@ mod input_types {
             working_set.parse_errors.first(),
             Some(ParseError::VariableNotFound(_, _))
         ));
+
+        let element = &block
+            .pipelines
+            .first()
+            .unwrap()
+            .elements
+            .first()
+            .unwrap()
+            .expr;
+        let Expr::Call(call) = &element.expr else {
+            eprintln!("{:?}", element.expr);
+            panic!("Expected Expr::Call");
+        };
+        let Expr::Keyword(else_kwd) = &call
+            .arguments
+            .get(2)
+            .expect("This call of `if` should have 3 arguments")
+            .expr()
+            .unwrap()
+            .expr
+        else {
+            panic!("Expected Expr::Keyword");
+        };
+        assert!(!matches!(else_kwd.expr.expr, Expr::Garbage))
     }
 
     #[test]
@@ -2433,6 +2484,7 @@ mod input_types {
 
     #[rstest]
     #[case::input_output(b"def q []: int -> int {1}", false)]
+    #[case::input_output(b"def q [x: bool]: int -> int {2}", false)]
     #[case::input_output(b"def q []: string -> string {'qwe'}", false)]
     #[case::input_output(b"def q []: nothing -> nothing {null}", false)]
     #[case::input_output(b"def q []: list<string> -> list<string> {[]}", false)]
@@ -2452,6 +2504,42 @@ mod input_types {
     #[case::input_output(b"def q []: nothing -> record<c: int e: int {{c: 1 e: 1}}", true)]
     #[case::input_output(b"def q []: record<c: int e: int -> record<a: int> {{a: 1}}", true)]
     #[case::input_output(b"def q []: nothing -> record<a: record<a: int> {{a: {a: 1}}}", true)]
+    #[case::input_output(b"def q []: int []}", true)]
+    #[case::input_output(b"def q []: bool {[]", true)]
+    // Type signature variants with whitespace between inputs and `:`
+    #[case::input_output(b"def q [] : int -> int {1}", false)]
+    #[case::input_output(b"def q [x: bool] : int -> int {2}", false)]
+    #[case::input_output(b"def q []\t   : string -> string {'qwe'}", false)]
+    #[case::input_output(b"def q []  \t : nothing -> nothing {null}", false)]
+    #[case::input_output(b"def q [] \t: list<string> -> list<string> {[]}", false)]
+    #[case::input_output(
+        b"def q []\t: record<a: int b: int> -> record<c: int e: int> {{c: 1 e: 1}}",
+        false
+    )]
+    #[case::input_output(
+        b"def q [] : table<a: int b: int> -> table<c: int e: int> {[{c: 1 e: 1}]}",
+        false
+    )]
+    #[case::input_output(
+        b"def q [] : nothing -> record<c: record<a: int b: int> e: int> {{c: {a: 1 b: 2} e: 1}}",
+        false
+    )]
+    #[case::input_output(b"def q [] : nothing -> list<string {[]}", true)]
+    #[case::input_output(b"def q [] : nothing -> record<c: int e: int {{c: 1 e: 1}}", true)]
+    #[case::input_output(b"def q [] : record<c: int e: int -> record<a: int> {{a: 1}}", true)]
+    #[case::input_output(b"def q [] : nothing -> record<a: record<a: int> {{a: {a: 1}}}", true)]
+    #[case::input_output(b"def q [] : int []}", true)]
+    #[case::input_output(b"def q [] : bool {[]", true)]
+    // No input-output type signature
+    #[case::input_output(b"def qq [] {[]}", false)]
+    #[case::input_output(b"def q [] []}", true)]
+    #[case::input_output(b"def q [] {", true)]
+    #[case::input_output(b"def q []: []}", true)]
+    #[case::input_output(b"def q [] int {}", true)]
+    #[case::input_output(b"def q [x: string, y: int] {{c: 1 e: 1}}", false)]
+    #[case::input_output(b"def q [x: string, y: int]: {}", true)]
+    #[case::input_output(b"def q [x: string, y: int] {a: {a: 1}}", true)]
+    #[case::input_output(b"def foo {3}", true)]
     #[case::vardecl(b"let a: int = 1", false)]
     #[case::vardecl(b"let a: string = 'qwe'", false)]
     #[case::vardecl(b"let a: nothing = null", false)]
@@ -2533,7 +2621,7 @@ mod record {
         let engine_state = EngineState::new();
         let mut working_set = StateWorkingSet::new(&engine_state);
         let block = parse(&mut working_set, None, expr, false);
-        assert!(working_set.parse_errors.first().is_none());
+        assert!(working_set.parse_errors.is_empty());
         let pipeline_el_expr = &block
             .pipelines
             .first()

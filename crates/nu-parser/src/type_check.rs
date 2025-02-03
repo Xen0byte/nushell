@@ -29,8 +29,6 @@ pub fn type_compatible(lhs: &Type, rhs: &Type) -> bool {
 
     match (lhs, rhs) {
         (Type::List(c), Type::List(d)) => type_compatible(c, d),
-        (Type::ListStream, Type::List(_)) => true,
-        (Type::List(_), Type::ListStream) => true,
         (Type::List(c), Type::Table(table_fields)) => {
             if matches!(**c, Type::Any) {
                 return true;
@@ -57,7 +55,6 @@ pub fn type_compatible(lhs: &Type, rhs: &Type) -> bool {
         (Type::Int, Type::Number) => true,
         (Type::Number, Type::Float) => true,
         (Type::Float, Type::Number) => true,
-        (Type::Closure, Type::Block) => true,
         (Type::Any, _) => true,
         (_, Type::Any) => true,
         (Type::Record(lhs), Type::Record(rhs)) | (Type::Table(lhs), Type::Table(rhs)) => {
@@ -88,6 +85,7 @@ pub fn math_result_type(
                 (Type::Float, Type::Number) => (Type::Number, None),
                 (Type::String, Type::String) => (Type::String, None),
                 (Type::Date, Type::Duration) => (Type::Date, None),
+                (Type::Duration, Type::Date) => (Type::Date, None),
                 (Type::Duration, Type::Duration) => (Type::Duration, None),
                 (Type::Filesize, Type::Filesize) => (Type::Filesize, None),
 
@@ -131,7 +129,7 @@ pub fn math_result_type(
                     )
                 }
             },
-            Operator::Math(Math::Append) => check_append(working_set, lhs, rhs, op),
+            Operator::Math(Math::Concat) => check_concat(working_set, lhs, rhs, op),
             Operator::Math(Math::Minus) => match (&lhs.ty, &rhs.ty) {
                 (Type::Int, Type::Int) => (Type::Int, None),
                 (Type::Float, Type::Int) => (Type::Float, None),
@@ -280,15 +278,15 @@ pub fn math_result_type(
                 }
             },
             Operator::Math(Math::Divide) => match (&lhs.ty, &rhs.ty) {
-                (Type::Int, Type::Int) => (Type::Int, None),
+                (Type::Int, Type::Int) => (Type::Float, None),
                 (Type::Float, Type::Int) => (Type::Float, None),
                 (Type::Int, Type::Float) => (Type::Float, None),
                 (Type::Float, Type::Float) => (Type::Float, None),
-                (Type::Number, Type::Number) => (Type::Number, None),
-                (Type::Number, Type::Int) => (Type::Number, None),
-                (Type::Int, Type::Number) => (Type::Number, None),
-                (Type::Number, Type::Float) => (Type::Number, None),
-                (Type::Float, Type::Number) => (Type::Number, None),
+                (Type::Number, Type::Number) => (Type::Float, None),
+                (Type::Number, Type::Int) => (Type::Float, None),
+                (Type::Int, Type::Number) => (Type::Float, None),
+                (Type::Number, Type::Float) => (Type::Float, None),
+                (Type::Float, Type::Number) => (Type::Float, None),
                 (Type::Filesize, Type::Filesize) => (Type::Float, None),
                 (Type::Filesize, Type::Int) => (Type::Filesize, None),
                 (Type::Filesize, Type::Float) => (Type::Filesize, None),
@@ -379,9 +377,9 @@ pub fn math_result_type(
             },
             Operator::Math(Math::FloorDivision) => match (&lhs.ty, &rhs.ty) {
                 (Type::Int, Type::Int) => (Type::Int, None),
-                (Type::Float, Type::Int) => (Type::Int, None),
-                (Type::Int, Type::Float) => (Type::Int, None),
-                (Type::Float, Type::Float) => (Type::Int, None),
+                (Type::Float, Type::Int) => (Type::Float, None),
+                (Type::Int, Type::Float) => (Type::Float, None),
+                (Type::Float, Type::Float) => (Type::Float, None),
                 (Type::Number, Type::Number) => (Type::Number, None),
                 (Type::Number, Type::Int) => (Type::Number, None),
                 (Type::Int, Type::Number) => (Type::Number, None),
@@ -822,7 +820,7 @@ pub fn math_result_type(
                     )
                 }
             },
-            Operator::Comparison(Comparison::In) => match (&lhs.ty, &rhs.ty) {
+            Operator::Comparison(Comparison::In | Comparison::NotIn) => match (&lhs.ty, &rhs.ty) {
                 (t, Type::List(u)) if type_compatible(t, u) => (Type::Bool, None),
                 (Type::Int | Type::Float | Type::Number, Type::Range) => (Type::Bool, None),
                 (Type::String, Type::String) => (Type::Bool, None),
@@ -860,44 +858,48 @@ pub fn math_result_type(
                     )
                 }
             },
-            Operator::Comparison(Comparison::NotIn) => match (&lhs.ty, &rhs.ty) {
-                (t, Type::List(u)) if type_compatible(t, u) => (Type::Bool, None),
-                (Type::Int | Type::Float | Type::Number, Type::Range) => (Type::Bool, None),
-                (Type::String, Type::String) => (Type::Bool, None),
-                (Type::String, Type::Record(_)) => (Type::Bool, None),
+            Operator::Comparison(Comparison::Has | Comparison::NotHas) => {
+                let container = lhs;
+                let element = rhs;
+                match (&element.ty, &container.ty) {
+                    (t, Type::List(u)) if type_compatible(t, u) => (Type::Bool, None),
+                    (Type::Int | Type::Float | Type::Number, Type::Range) => (Type::Bool, None),
+                    (Type::String, Type::String) => (Type::Bool, None),
+                    (Type::String, Type::Record(_)) => (Type::Bool, None),
 
-                (Type::Custom(a), Type::Custom(b)) if a == b => (Type::Custom(a.clone()), None),
-                (Type::Custom(a), _) => (Type::Custom(a.clone()), None),
+                    (Type::Custom(a), Type::Custom(b)) if a == b => (Type::Custom(a.clone()), None),
+                    (Type::Custom(a), _) => (Type::Custom(a.clone()), None),
 
-                (Type::Any, _) => (Type::Bool, None),
-                (_, Type::Any) => (Type::Bool, None),
-                (Type::Int | Type::Float | Type::String, _) => {
-                    *op = Expression::garbage(working_set, op.span);
-                    (
-                        Type::Any,
-                        Some(ParseError::UnsupportedOperationRHS(
-                            "subset comparison".into(),
-                            op.span,
-                            lhs.span,
-                            lhs.ty.clone(),
-                            rhs.span,
-                            rhs.ty.clone(),
-                        )),
-                    )
+                    (Type::Any, _) => (Type::Bool, None),
+                    (_, Type::Any) => (Type::Bool, None),
+                    (Type::Int | Type::Float | Type::String, _) => {
+                        *op = Expression::garbage(working_set, op.span);
+                        (
+                            Type::Any,
+                            Some(ParseError::UnsupportedOperationLHS(
+                                "subset comparison".into(),
+                                op.span,
+                                element.span,
+                                element.ty.clone(),
+                            )),
+                        )
+                    }
+                    _ => {
+                        *op = Expression::garbage(working_set, op.span);
+                        (
+                            Type::Any,
+                            Some(ParseError::UnsupportedOperationRHS(
+                                "subset comparison".into(),
+                                op.span,
+                                element.span,
+                                element.ty.clone(),
+                                container.span,
+                                container.ty.clone(),
+                            )),
+                        )
+                    }
                 }
-                _ => {
-                    *op = Expression::garbage(working_set, op.span);
-                    (
-                        Type::Any,
-                        Some(ParseError::UnsupportedOperationLHS(
-                            "subset comparison".into(),
-                            op.span,
-                            lhs.span,
-                            lhs.ty.clone(),
-                        )),
-                    )
-                }
-            },
+            }
             Operator::Bits(Bits::ShiftLeft)
             | Operator::Bits(Bits::ShiftRight)
             | Operator::Bits(Bits::BitOr)
@@ -934,8 +936,8 @@ pub fn math_result_type(
                     )
                 }
             },
-            Operator::Assignment(Assignment::AppendAssign) => {
-                check_append(working_set, lhs, rhs, op)
+            Operator::Assignment(Assignment::ConcatAssign) => {
+                check_concat(working_set, lhs, rhs, op)
             }
             Operator::Assignment(_) => match (&lhs.ty, &rhs.ty) {
                 (x, y) if x == y => (Type::Nothing, None),
@@ -1084,7 +1086,7 @@ pub fn check_block_input_output(working_set: &StateWorkingSet, block: &Block) ->
     output_errors
 }
 
-fn check_append(
+fn check_concat(
     working_set: &mut StateWorkingSet,
     lhs: &Expression,
     rhs: &Expression,
@@ -1098,23 +1100,17 @@ fn check_append(
                 (Type::List(Box::new(Type::Any)), None)
             }
         }
-        (Type::List(a), b) | (b, Type::List(a)) => {
-            if a == &Box::new(b.clone()) {
-                (Type::List(a.clone()), None)
-            } else {
-                (Type::List(Box::new(Type::Any)), None)
-            }
-        }
         (Type::Table(a), Type::Table(_)) => (Type::Table(a.clone()), None),
         (Type::String, Type::String) => (Type::String, None),
         (Type::Binary, Type::Binary) => (Type::Binary, None),
         (Type::Any, _) | (_, Type::Any) => (Type::Any, None),
-        (Type::Table(_) | Type::String | Type::Binary, _) => {
+        (Type::Table(_) | Type::List(_) | Type::String | Type::Binary, _)
+        | (_, Type::Table(_) | Type::List(_) | Type::String | Type::Binary) => {
             *op = Expression::garbage(working_set, op.span);
             (
                 Type::Any,
                 Some(ParseError::UnsupportedOperationRHS(
-                    "append".into(),
+                    "concatenation".into(),
                     op.span,
                     lhs.span,
                     lhs.ty.clone(),
@@ -1128,7 +1124,7 @@ fn check_append(
             (
                 Type::Any,
                 Some(ParseError::UnsupportedOperationLHS(
-                    "append".into(),
+                    "concatenation".into(),
                     op.span,
                     lhs.span,
                     lhs.ty.clone(),

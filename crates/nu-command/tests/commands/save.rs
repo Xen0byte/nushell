@@ -415,7 +415,7 @@ fn save_with_custom_converter() {
 
         nu!(cwd: dirs.test(), pipeline(
             r#"
-                def "to ndjson" []: any -> string { each { to json --raw } | to text } ;
+                def "to ndjson" []: any -> string { each { to json --raw } | to text --no-newline } ;
                 {a: 1, b: 2} | save test.ndjson
             "#
         ));
@@ -524,4 +524,13 @@ fn parent_redirection_doesnt_affect_save() {
         let actual = file_contents(dirs.test().join("empty_file"));
         assert_eq!(actual.trim_end(), "");
     })
+}
+
+#[test]
+fn force_save_to_dir() {
+    let actual = nu!(cwd: "crates/nu-command/tests/commands", r#"
+        "aaa" | save -f ..
+        "#);
+
+    assert!(actual.err.contains("nu::shell::io::is_a_directory"));
 }

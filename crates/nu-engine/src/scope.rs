@@ -56,11 +56,12 @@ impl<'e, 's> ScopeData<'e, 's> {
             let var_type = Value::string(var.ty.to_string(), span);
             let is_const = Value::bool(var.const_val.is_some(), span);
 
-            let var_value = if let Ok(val) = self.stack.get_var(**var_id, span) {
-                val
-            } else {
-                Value::nothing(span)
-            };
+            let var_value = self
+                .stack
+                .get_var(**var_id, span)
+                .ok()
+                .or(var.const_val.clone())
+                .unwrap_or(Value::nothing(span));
 
             let var_id_val = Value::int(var_id.get() as i64, span);
 
@@ -113,6 +114,7 @@ impl<'e, 's> ScopeData<'e, 's> {
                     "examples" => Value::list(examples, span),
                     "type" => Value::string(decl.command_type().to_string(), span),
                     "is_sub" => Value::bool(decl.is_sub(), span),
+                    "is_const" => Value::bool(decl.is_const(), span),
                     "creates_scope" => Value::bool(signature.creates_scope, span),
                     "extra_description" => Value::string(decl.extra_description(), span),
                     "search_terms" => Value::string(decl.search_terms().join(", "), span),
@@ -487,6 +489,7 @@ impl<'e, 's> ScopeData<'e, 's> {
                 "description" => Value::string(module_desc, span),
                 "extra_description" => Value::string(module_extra_desc, span),
                 "module_id" => Value::int(module_id.get() as i64, span),
+                "file" => Value::string(module.file.clone().map_or("unknown".to_string(), |(p, _)| p.path().to_string_lossy().to_string()), span),
             },
             span,
         )
@@ -526,14 +529,14 @@ impl<'e, 's> ScopeData<'e, 's> {
 }
 
 fn extract_custom_completion_from_arg(engine_state: &EngineState, shape: &SyntaxShape) -> String {
-    return match shape {
+    match shape {
         SyntaxShape::CompleterWrapper(_, custom_completion_decl_id) => {
             let custom_completion_command = engine_state.get_decl(*custom_completion_decl_id);
             let custom_completion_command_name: &str = custom_completion_command.name();
             custom_completion_command_name.to_string()
         }
         _ => "".to_string(),
-    };
+    }
 }
 
 fn sort_rows(decls: &mut [Value]) {

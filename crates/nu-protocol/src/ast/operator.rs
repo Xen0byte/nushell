@@ -17,6 +17,8 @@ pub enum Comparison {
     NotRegexMatch,
     In,
     NotIn,
+    Has,
+    NotHas,
     StartsWith,
     EndsWith,
 }
@@ -24,7 +26,7 @@ pub enum Comparison {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Math {
     Plus,
-    Append,
+    Concat,
     Minus,
     Multiply,
     Divide,
@@ -53,7 +55,7 @@ pub enum Bits {
 pub enum Assignment {
     Assign,
     PlusAssign,
-    AppendAssign,
+    ConcatAssign,
     MinusAssign,
     MultiplyAssign,
     DivideAssign,
@@ -90,7 +92,9 @@ impl Operator {
             | Self::Comparison(Comparison::NotEqual)
             | Self::Comparison(Comparison::In)
             | Self::Comparison(Comparison::NotIn)
-            | Self::Math(Math::Append) => 80,
+            | Self::Comparison(Comparison::Has)
+            | Self::Comparison(Comparison::NotHas)
+            | Self::Math(Math::Concat) => 80,
             Self::Bits(Bits::BitAnd) => 75,
             Self::Bits(Bits::BitXor) => 70,
             Self::Bits(Bits::BitOr) => 60,
@@ -107,7 +111,7 @@ impl Display for Operator {
         match self {
             Operator::Assignment(Assignment::Assign) => write!(f, "="),
             Operator::Assignment(Assignment::PlusAssign) => write!(f, "+="),
-            Operator::Assignment(Assignment::AppendAssign) => write!(f, "++="),
+            Operator::Assignment(Assignment::ConcatAssign) => write!(f, "++="),
             Operator::Assignment(Assignment::MinusAssign) => write!(f, "-="),
             Operator::Assignment(Assignment::MultiplyAssign) => write!(f, "*="),
             Operator::Assignment(Assignment::DivideAssign) => write!(f, "/="),
@@ -115,16 +119,18 @@ impl Display for Operator {
             Operator::Comparison(Comparison::NotEqual) => write!(f, "!="),
             Operator::Comparison(Comparison::LessThan) => write!(f, "<"),
             Operator::Comparison(Comparison::GreaterThan) => write!(f, ">"),
-            Operator::Comparison(Comparison::RegexMatch) => write!(f, "=~"),
-            Operator::Comparison(Comparison::NotRegexMatch) => write!(f, "!~"),
+            Operator::Comparison(Comparison::RegexMatch) => write!(f, "=~ or like"),
+            Operator::Comparison(Comparison::NotRegexMatch) => write!(f, "!~ or not-like"),
             Operator::Comparison(Comparison::LessThanOrEqual) => write!(f, "<="),
             Operator::Comparison(Comparison::GreaterThanOrEqual) => write!(f, ">="),
             Operator::Comparison(Comparison::StartsWith) => write!(f, "starts-with"),
             Operator::Comparison(Comparison::EndsWith) => write!(f, "ends-with"),
             Operator::Comparison(Comparison::In) => write!(f, "in"),
             Operator::Comparison(Comparison::NotIn) => write!(f, "not-in"),
+            Operator::Comparison(Comparison::Has) => write!(f, "has"),
+            Operator::Comparison(Comparison::NotHas) => write!(f, "not-has"),
             Operator::Math(Math::Plus) => write!(f, "+"),
-            Operator::Math(Math::Append) => write!(f, "++"),
+            Operator::Math(Math::Concat) => write!(f, "++"),
             Operator::Math(Math::Minus) => write!(f, "-"),
             Operator::Math(Math::Multiply) => write!(f, "*"),
             Operator::Math(Math::Divide) => write!(f, "/"),

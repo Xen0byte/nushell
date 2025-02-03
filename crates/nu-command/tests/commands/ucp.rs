@@ -610,9 +610,7 @@ static TEST_COPY_TO_FOLDER: &str = "hello_dir/";
 static TEST_COPY_TO_FOLDER_FILE: &str = "hello_dir/hello_world.txt";
 static TEST_COPY_FROM_FOLDER: &str = "hello_dir_with_file/";
 static TEST_COPY_FROM_FOLDER_FILE: &str = "hello_dir_with_file/hello_world.txt";
-#[cfg(not(target_os = "macos"))]
 static TEST_COPY_TO_FOLDER_NEW: &str = "hello_dir_new";
-#[cfg(not(target_os = "macos"))]
 static TEST_COPY_TO_FOLDER_NEW_FILE: &str = "hello_dir_new/hello_world.txt";
 
 #[test]
@@ -707,7 +705,6 @@ fn test_cp_multiple_files() {
 }
 
 #[test]
-#[cfg(not(target_os = "macos"))]
 fn test_cp_recurse() {
     Playground::setup("ucp_test_22", |dirs, sandbox| {
         // Create the relevant target directories
@@ -841,14 +838,13 @@ fn test_cp_arg_no_clobber() {
         let target = dirs.fixtures.join("cp").join(TEST_HOW_ARE_YOU_SOURCE);
         let target_hash = get_file_hash(target.display());
 
-        let actual = nu!(
-        cwd: dirs.root(),
-        "cp {} {} --no-clobber",
-        src.display(),
-        target.display()
+        let _ = nu!(
+            cwd: dirs.root(),
+            "cp {} {} --no-clobber",
+            src.display(),
+            target.display()
         );
         let after_cp_hash = get_file_hash(target.display());
-        assert!(actual.err.contains("not replacing"));
         // Check content was not clobbered
         assert_eq!(after_cp_hash, target_hash);
     });
@@ -858,7 +854,7 @@ fn test_cp_arg_no_clobber() {
 fn test_cp_arg_no_clobber_twice() {
     Playground::setup("ucp_test_29", |dirs, sandbox| {
         sandbox.with_files(&[
-            EmptyFile("source.txt"),
+            FileWithContent("source.txt", "fake data"),
             FileWithContent("source_with_body.txt", "some-body"),
         ]);
         nu!(
@@ -898,11 +894,17 @@ fn test_cp_debug_default() {
         {
             panic!("{}", format!("Failure: stdout was \n{}", actual.out));
         }
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(target_os = "linux")]
         if !actual
             .out
             .contains("copy offload: yes, reflink: unsupported, sparse detection: no")
         {
+            panic!("{}", format!("Failure: stdout was \n{}", actual.out));
+        }
+        #[cfg(target_os = "freebsd")]
+        if !actual.out.contains(
+            "copy offload: unsupported, reflink: unsupported, sparse detection: unsupported",
+        ) {
             panic!("{}", format!("Failure: stdout was \n{}", actual.out));
         }
 

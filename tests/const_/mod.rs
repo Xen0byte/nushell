@@ -122,8 +122,8 @@ fn const_string_interpolation_date() {
 
 #[test]
 fn const_string_interpolation_filesize() {
-    let actual = nu!(r#"const s = $"(2kb)"; $s"#);
-    assert_eq!(actual.out, "2.0 KiB");
+    let actual = nu!(r#"const s = $"(2kB)"; $s"#);
+    assert_eq!(actual.out, "2.0 kB");
 }
 
 #[test]
@@ -154,7 +154,6 @@ fn const_unary_operator(#[case] inp: &[&str], #[case] expect: &str) {
 #[case(&[r#"const x = "a" ++ "b" "#, "$x"], "ab")]
 #[case(&[r#"const x = [1,2] ++ [3]"#, "$x | describe"], "list<int>")]
 #[case(&[r#"const x = 0x[1,2] ++ 0x[3]"#, "$x | describe"], "binary")]
-#[case(&[r#"const x = 0x[1,2] ++ [3]"#, "$x | describe"], "list<any>")]
 #[case(&["const x = 1 < 2", "$x"], "true")]
 #[case(&["const x = (3 * 200) > (2 * 100)", "$x"], "true")]
 #[case(&["const x = (3 * 200) < (2 * 100)", "$x"], "false")]
@@ -238,13 +237,30 @@ fn complex_const_export() {
     let actual = nu!(&inp.join("; "));
     assert_eq!(actual.out, "eats");
 
-    let inp = &[
-        MODULE_SETUP,
-        "use spam",
-        "($spam.eggs.bacon.none | is-empty)",
-    ];
+    let inp = &[MODULE_SETUP, "use spam", "'none' in $spam.eggs.bacon"];
     let actual = nu!(&inp.join("; "));
-    assert_eq!(actual.out, "true");
+    assert_eq!(actual.out, "false");
+}
+
+#[test]
+fn only_nested_module_have_const() {
+    let setup = r#"
+        module spam {
+            export module eggs {
+                export module bacon {
+                    export const viking = 'eats'
+                    export module none {}
+                }
+            }
+        }
+    "#;
+    let inp = &[setup, "use spam", "$spam.eggs.bacon.viking"];
+    let actual = nu!(&inp.join("; "));
+    assert_eq!(actual.out, "eats");
+
+    let inp = &[setup, "use spam", "'none' in $spam.eggs.bacon"];
+    let actual = nu!(&inp.join("; "));
+    assert_eq!(actual.out, "false");
 }
 
 #[test]
@@ -261,20 +277,16 @@ fn complex_const_glob_export() {
     let actual = nu!(&inp.join("; "));
     assert_eq!(actual.out, "eats");
 
-    let inp = &[MODULE_SETUP, "use spam *", "($eggs.bacon.none | is-empty)"];
+    let inp = &[MODULE_SETUP, "use spam *", "'none' in $eggs.bacon"];
     let actual = nu!(&inp.join("; "));
-    assert_eq!(actual.out, "true");
+    assert_eq!(actual.out, "false");
 }
 
 #[test]
 fn complex_const_drill_export() {
-    let inp = &[
-        MODULE_SETUP,
-        "use spam eggs bacon none",
-        "($none | is-empty)",
-    ];
+    let inp = &[MODULE_SETUP, "use spam eggs bacon none", "$none"];
     let actual = nu!(&inp.join("; "));
-    assert_eq!(actual.out, "true");
+    assert!(actual.err.contains("variable not found"));
 }
 
 #[test]

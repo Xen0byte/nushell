@@ -3,7 +3,7 @@ use std::sync::Arc;
 use nu_protocol::{ShellError, Span, Value};
 use polars::{
     datatypes::UnknownKind,
-    prelude::{DataType, Field, Schema, SchemaRef, TimeUnit},
+    prelude::{DataType, Field, PlSmallStr, Schema, SchemaExt, SchemaRef, TimeUnit},
 };
 
 #[derive(Debug, Clone)]
@@ -12,10 +12,8 @@ pub struct NuSchema {
 }
 
 impl NuSchema {
-    pub fn new(schema: Schema) -> Self {
-        Self {
-            schema: Arc::new(schema),
-        }
+    pub fn new(schema: SchemaRef) -> Self {
+        Self { schema }
     }
 }
 
@@ -23,7 +21,7 @@ impl TryFrom<&Value> for NuSchema {
     type Error = ShellError;
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
         let schema = value_to_schema(value, Span::unknown())?;
-        Ok(Self::new(schema))
+        Ok(Self::new(Arc::new(schema)))
     }
 }
 
@@ -49,7 +47,7 @@ fn fields_to_value(fields: impl Iterator<Item = Field>, span: Span) -> Value {
     let record = fields
         .map(|field| {
             let col = field.name().to_string();
-            let val = dtype_to_value(field.data_type(), span);
+            let val = dtype_to_value(field.dtype(), span);
             (col, val)
         })
         .collect();
@@ -78,11 +76,11 @@ fn value_to_fields(value: &Value, span: Span) -> Result<Vec<Field>, ShellError> 
             Value::Record { .. } => {
                 let fields = value_to_fields(val, span)?;
                 let dtype = DataType::Struct(fields);
-                Ok(Field::new(col, dtype))
+                Ok(Field::new(col.into(), dtype))
             }
             _ => {
                 let dtype = str_to_dtype(&val.coerce_string()?, span)?;
-                Ok(Field::new(col, dtype))
+                Ok(Field::new(col.into(), dtype))
             }
         })
         .collect::<Result<Vec<Field>, ShellError>>()?;
@@ -150,7 +148,10 @@ pub fn str_to_dtype(dtype: &str, span: Span) -> Result<DataType, ShellError> {
             } else {
                 Some(next.to_string())
             };
-            Ok(DataType::Datetime(time_unit, timezone))
+            Ok(DataType::Datetime(
+                time_unit,
+                timezone.map(PlSmallStr::from),
+            ))
         }
         _ if dtype.starts_with("duration") => {
             let inner = dtype.trim_start_matches("duration<").trim_end_matches('>');
@@ -215,13 +216,13 @@ mod test {
 
         let schema = value_to_schema(&value, Span::unknown()).unwrap();
         let expected = Schema::from_iter(vec![
-            Field::new("name", DataType::String),
-            Field::new("age", DataType::Int32),
+            Field::new("name".into(), DataType::String),
+            Field::new("age".into(), DataType::Int32),
             Field::new(
-                "address",
+                "address".into(),
                 DataType::Struct(vec![
-                    Field::new("street", DataType::String),
-                    Field::new("city", DataType::String),
+                    Field::new("street".into(), DataType::String),
+                    Field::new("city".into(), DataType::String),
                 ]),
             ),
         ]);

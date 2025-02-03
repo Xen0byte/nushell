@@ -2,12 +2,13 @@ use crate::eval_call;
 use nu_protocol::{
     ast::{Argument, Call, Expr, Expression, RecordItem},
     debugger::WithoutDebug,
+    engine::CommandType,
     engine::{Command, EngineState, Stack, UNKNOWN_SPAN_ID},
     record, Category, Config, Example, IntoPipelineData, PipelineData, PositionalArg, Signature,
     Span, SpanId, Spanned, SyntaxShape, Type, Value,
 };
+use nu_utils::terminal_size;
 use std::{collections::HashMap, fmt::Write};
-use terminal_size::{Height, Width};
 
 /// ANSI style reset
 const RESET: &str = "\x1b[0m";
@@ -112,16 +113,29 @@ fn get_documentation(
     //   - https://github.com/nushell/nushell/issues/11447
     //   - https://github.com/nushell/nushell/issues/11625
     let mut subcommands = vec![];
-    let signatures = engine_state.get_signatures(true);
-    for sig in signatures {
+    let signatures = engine_state.get_signatures_and_declids(true);
+    for (sig, decl_id) in signatures {
+        let command_type = engine_state.get_decl(decl_id).command_type();
+
         // Don't display removed/deprecated commands in the Subcommands list
         if sig.name.starts_with(&format!("{cmd_name} "))
             && !matches!(sig.category, Category::Removed)
         {
-            subcommands.push(format!(
-                "  {help_subcolor_one}{}{RESET} - {}",
-                sig.name, sig.description
-            ));
+            // If it's a plugin, alias, or custom command, display that information in the help
+            if command_type == CommandType::Plugin
+                || command_type == CommandType::Alias
+                || command_type == CommandType::Custom
+            {
+                subcommands.push(format!(
+                    "  {help_subcolor_one}{} {help_section_name}({}){RESET} - {}",
+                    sig.name, command_type, sig.description
+                ));
+            } else {
+                subcommands.push(format!(
+                    "  {help_subcolor_one}{}{RESET} - {}",
+                    sig.name, sig.description
+                ));
+            }
         }
     }
 
@@ -180,7 +194,7 @@ fn get_documentation(
     }
 
     fn get_term_width() -> usize {
-        if let Some((Width(w), Height(_))) = terminal_size::terminal_size() {
+        if let Ok((w, _h)) = terminal_size() {
             w as usize
         } else {
             80
@@ -244,7 +258,7 @@ fn get_documentation(
         long_desc.push_str("  ");
         long_desc.push_str(example.description);
 
-        if !nu_config.use_ansi_coloring {
+        if !nu_config.use_ansi_coloring.get(engine_state) {
             let _ = write!(long_desc, "\n  > {}\n", example.example);
         } else {
             let code_string = nu_highlight_string(example.example, engine_state, stack);
@@ -315,7 +329,7 @@ fn get_documentation(
 
     long_desc.push('\n');
 
-    if !nu_config.use_ansi_coloring {
+    if !nu_config.use_ansi_coloring.get(engine_state) {
         nu_utils::strip_ansi_string_likely(long_desc)
     } else {
         long_desc

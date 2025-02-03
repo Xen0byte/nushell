@@ -238,7 +238,7 @@ pub trait Eval {
                             Math::Minus => lhs.sub(op_span, &rhs, expr_span),
                             Math::Multiply => lhs.mul(op_span, &rhs, expr_span),
                             Math::Divide => lhs.div(op_span, &rhs, expr_span),
-                            Math::Append => lhs.append(op_span, &rhs, expr_span),
+                            Math::Concat => lhs.concat(op_span, &rhs, expr_span),
                             Math::Modulo => lhs.modulo(op_span, &rhs, expr_span),
                             Math::FloorDivision => lhs.floor_div(op_span, &rhs, expr_span),
                             Math::Pow => lhs.pow(op_span, &rhs, expr_span),
@@ -256,6 +256,8 @@ pub trait Eval {
                             Comparison::NotEqual => lhs.ne(op_span, &rhs, expr_span),
                             Comparison::In => lhs.r#in(op_span, &rhs, expr_span),
                             Comparison::NotIn => lhs.not_in(op_span, &rhs, expr_span),
+                            Comparison::Has => lhs.has(op_span, &rhs, expr_span),
+                            Comparison::NotHas => lhs.not_has(op_span, &rhs, expr_span),
                             Comparison::StartsWith => lhs.starts_with(op_span, &rhs, expr_span),
                             Comparison::EndsWith => lhs.ends_with(op_span, &rhs, expr_span),
                             Comparison::RegexMatch => {

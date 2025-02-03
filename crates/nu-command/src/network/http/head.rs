@@ -38,8 +38,8 @@ impl Command for SubCommand {
             )
             .named(
                 "max-time",
-                SyntaxShape::Int,
-                "timeout period in seconds",
+                SyntaxShape::Duration,
+                "max duration before timeout occurs",
                 Some('m'),
             )
             .named(
@@ -155,7 +155,14 @@ fn helper(
     request = request_add_authorization_header(args.user, args.password, request);
     request = request_add_custom_headers(args.headers, request)?;
 
-    let response = send_request(request, HttpBody::None, None, call.head, signals);
+    let response = send_request(
+        engine_state,
+        request,
+        HttpBody::None,
+        None,
+        call.head,
+        signals,
+    );
     check_response_redirection(redirect_mode, span, &response)?;
     request_handle_response_headers(span, response)
 }

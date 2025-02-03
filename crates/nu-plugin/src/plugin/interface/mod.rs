@@ -1046,8 +1046,12 @@ impl ForegroundGuard {
             {
                 use nix::unistd::{setpgid, Pid};
                 // This should always succeed, frankly, but handle the error just in case
-                setpgid(Pid::from_raw(0), Pid::from_raw(0)).map_err(|err| ShellError::IOError {
-                    msg: err.to_string(),
+                setpgid(Pid::from_raw(0), Pid::from_raw(0)).map_err(|err| {
+                    nu_protocol::shell_error::io::IoError::new_internal(
+                        std::io::Error::from(err).kind(),
+                        "Could not set pgid",
+                        nu_protocol::location!(),
+                    )
                 })?;
             }
             interface.leave_foreground()?;
@@ -1091,8 +1095,7 @@ fn set_pgrp_from_enter_foreground(pgrp: i64) -> Result<(), ShellError> {
 fn set_pgrp_from_enter_foreground(_pgrp: i64) -> Result<(), ShellError> {
     Err(ShellError::NushellFailed {
         msg: concat!(
-            "EnterForeground asked plugin to join process group, but not supported on ",
-            cfg!(target_os)
+            "EnterForeground asked plugin to join process group, but this is not supported on non UNIX platforms.",
         )
         .into(),
     })
